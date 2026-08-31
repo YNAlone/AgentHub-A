@@ -598,6 +598,16 @@ export async function listDirectory(targetPath?: string): Promise<ListDirResult>
   return json<ListDirResult>(fetch(`/api/fs/listdir${qs}`))
 }
 
+export async function createDirectory(parentPath: string, name: string): Promise<{ path: string }> {
+  return json<{ path: string }>(
+    fetch('/api/fs/mkdir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parentPath, name }),
+    }),
+  )
+}
+
 // ─── Filesystem (conversation-scoped, 文件浏览器面板用) ────────
 export interface WorkspaceListResult {
   relPath: string
