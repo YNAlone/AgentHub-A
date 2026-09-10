@@ -1,0 +1,130 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="ObhtWjxlYoj7cjvmLqvR">
+    <mxGraphModel dx="3624" dy="853" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2339" pageHeight="3300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-3" edge="1" parent="1" source="0U1qbRHCY_Pss2iSFhoM-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=16;" target="0U1qbRHCY_Pss2iSFhoM-2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-4" connectable="0" parent="0U1qbRHCY_Pss2iSFhoM-3" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=16;" value="路由判断&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry relative="1" x="-0.2255" y="-3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="用户输入&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="280" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-6" edge="1" parent="1" source="0U1qbRHCY_Pss2iSFhoM-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="0U1qbRHCY_Pss2iSFhoM-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="由Orchestrator或被@&lt;div&gt;的Agent响应&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="120" x="280" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-8" edge="1" parent="1" source="0U1qbRHCY_Pss2iSFhoM-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=16;" target="0U1qbRHCY_Pss2iSFhoM-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-17" connectable="0" parent="0U1qbRHCY_Pss2iSFhoM-8" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=16;" value="Yes" vertex="1">
+          <mxGeometry relative="1" x="-0.4407" y="2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-19" edge="1" parent="1" source="0U1qbRHCY_Pss2iSFhoM-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="0U1qbRHCY_Pss2iSFhoM-18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-5" parent="1" style="rhombus;whiteSpace=wrap;html=1;shapeInside=1;fontSize=16;" value="由Orchestrator响应" vertex="1">
+          <mxGeometry height="100" width="130" x="275" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="" vertex="1">
+          <mxGeometry height="290" width="350" x="-80" y="520" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="加载System prompt 、可用工具&lt;div&gt;然后触发DAG依赖&lt;/div&gt;" vertex="1">
+          <mxGeometry height="70" width="150" x="-55" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-11" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;fontSize=16;" value="System" vertex="1">
+          <mxGeometry height="30" width="60" x="-10" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="加载先前会话历史" vertex="1">
+          <mxGeometry height="60" width="120" x="130" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-13" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;fontSize=16;" value="history" vertex="1">
+          <mxGeometry height="30" width="60" x="160" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="本次对话需求" vertex="1">
+          <mxGeometry height="60" width="120" x="35" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-15" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;fontSize=16;" value="user" vertex="1">
+          <mxGeometry height="30" width="60" x="65" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-16" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;fontSize=16;" value="Orchestrator" vertex="1">
+          <mxGeometry height="60" width="100" x="45" y="490" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-18" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="280" width="370" x="420" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-20" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=16;" value="解析需求、&lt;b&gt;plan_tasks，&lt;/b&gt;返回文本流&lt;div&gt;{type:&#39;part.delta&#39; , delta : {&lt;/div&gt;&lt;div&gt;type: &#39;text.append&#39; , text: &#39;...&#39;}}&lt;/div&gt;" vertex="1">
+          <mxGeometry height="250" width="360" x="-1080" y="535" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-22" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;fontSize=16;" value="LLM" vertex="1">
+          <mxGeometry height="30" width="50" x="-490" y="645" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-29" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;exitX=0.543;exitY=1.004;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.447;entryY=0.999;entryDx=0;entryDy=0;entryPerimeter=0;endFill=1;edgeStyle=orthogonalEdgeStyle;curved=1;fontSize=16;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="-720.97" y="880.03" />
+              <mxPoint y="880.03" />
+            </Array>
+            <mxPoint x="-721" y="790" as="sourcePoint" />
+            <mxPoint x="-0.02999999999973113" y="808.7099999999998" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-31" connectable="0" parent="0U1qbRHCY_Pss2iSFhoM-29" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=16;" value="返回解析结果" vertex="1">
+          <mxGeometry relative="1" x="-0.2909" y="9" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-32" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="输入统一：&lt;br&gt;Prompt、工作区、模型配置、附件、tools&lt;div&gt;输出统一：&lt;/div&gt;&lt;div&gt;流式事件&lt;br&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;请求格式转化&lt;div&gt;例：[{&lt;/div&gt;&lt;div&gt;role : &#39;system&#39; , content: &#39; system prompt &#39;}]&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="240" width="320" x="-660" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-33" parent="1" style="ellipse;whiteSpace=wrap;html=1;shapeInside=1;aspect=fixed;" value="组装Agent" vertex="1">
+          <mxGeometry height="80" width="80" x="180" y="710" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-35" edge="1" parent="1" style="endArrow=classic;html=1;rounded=0;exitX=0;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.462;entryDx=0;entryDy=0;entryPerimeter=0;edgeStyle=orthogonalEdgeStyle;curved=1;" target="0U1qbRHCY_Pss2iSFhoM-32" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="-60" y="520" />
+              <mxPoint x="-60" y="290.92" />
+            </Array>
+            <mxPoint x="-9.999999999999545" y="520" as="sourcePoint" />
+            <mxPoint x="-266.8000000000002" y="208.29999999999995" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-36" connectable="0" parent="0U1qbRHCY_Pss2iSFhoM-35" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="发送消息" vertex="1">
+          <mxGeometry relative="1" x="0.3066" y="19" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-37" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;" value="Adaptor" vertex="1">
+          <mxGeometry height="50" width="80" x="-540" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-38" edge="1" parent="1" source="0U1qbRHCY_Pss2iSFhoM-32" style="endArrow=classic;html=1;rounded=0;exitX=0.008;exitY=0.57;exitDx=0;exitDy=0;exitPerimeter=0;curved=1;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points">
+              <mxPoint x="-990" y="280" />
+            </Array>
+            <mxPoint x="-900" y="340" as="sourcePoint" />
+            <mxPoint x="-950" y="530" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-39" connectable="0" parent="0U1qbRHCY_Pss2iSFhoM-38" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="消息转发&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry relative="1" x="0.4609" y="60" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="0U1qbRHCY_Pss2iSFhoM-40" parent="1" style="ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;" value="LLM" vertex="1">
+          <mxGeometry height="40" width="70" x="-940" y="500" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
