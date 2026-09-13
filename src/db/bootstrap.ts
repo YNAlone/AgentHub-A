@@ -16,6 +16,7 @@
  *
  * 详见 Spec 12 §5 / §6 与 Spec 08。
  */
+import { migratePersonalSchema } from './personal-migration'
 import type Database from 'better-sqlite3'
 
 import { BUILTIN_AGENTS, UI_DESIGNER_ARTIFACT_PROMPT_HINT } from './builtin-agents'
@@ -302,6 +303,7 @@ function upgradeBuiltinAgents(sqlite: Database.Database): void {
 
 export function bootstrapDatabase(sqlite: Database.Database): void {
   ensureSchema(sqlite)
+  migratePersonalSchema(sqlite)
   ensureBuiltinAgents(sqlite)
   upgradeBuiltinAgents(sqlite)
 }

@@ -5,7 +5,7 @@
  */
 
 import { sql } from 'drizzle-orm'
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { index, integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import type { ArtifactContent, ArtifactType, AdapterName, MessagePart, ModelProvider } from '@/shared/types'
 
 // ─── Agents ──────────────────────────────────────────────────
@@ -195,7 +195,8 @@ export const agentRuns = sqliteTable(
       .references(() => agents.id),
     triggerMessageId: text('trigger_message_id'),
 
-    status: text('status', { enum: ['queued', 'running', 'complete', 'failed', 'aborted'] }).notNull(),
+    // Interrupted runs require a new explicit continuation; old approvals remain invalid.
+    status: text('status', { enum: ['queued', 'running', 'complete', 'failed', 'aborted', 'interrupted'] }).notNull(),
     error: text('error'),
 
     parentRunId: text('parent_run_id'),
@@ -304,3 +305,36 @@ export type AgentRunInsert = typeof agentRuns.$inferInsert
 
 export type ContextSummaryRow = typeof contextSummaries.$inferSelect
 export type ContextSummaryInsert = typeof contextSummaries.$inferInsert
+
+// Personal capabilities are additive; membership never changes a workspace path.
+export const projects = sqliteTable('projects', {
+  id: text('id').primaryKey(), name: text('name').notNull(), createdAt: integer('created_at').notNull(),
+})
+export const projectConversations = sqliteTable('project_conversations', {
+  conversationId: text('conversation_id').primaryKey().references(() => conversations.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+}, (t) => [index('idx_project_conversations_project').on(t.projectId)])
+export const sdkSessions = sqliteTable('sdk_sessions', {
+  namespace: text('namespace').notNull(), sessionKey: text('session_key').notNull(), handle: text('handle').notNull(),
+}, (t) => [primaryKey({ columns: [t.namespace, t.sessionKey] })])
+export const sdkContextRevisions = sqliteTable('sdk_context_revisions', {
+  namespace: text('namespace'), sessionKey: text('session_key'), signature: text('signature'),
+}, (t) => [primaryKey({ columns: [t.namespace, t.sessionKey] })])
+export const memories = sqliteTable('memories', {
+  id: text('id').primaryKey(), scope: text('scope').notNull(), projectId: text('project_id'), content: text('content').notNull(),
+  sourceConversationId: text('source_conversation_id').notNull(), sourceMessageIds: text('source_message_ids').notNull(),
+  evidence: text('evidence').notNull(), status: text('status').notNull(), createdAt: integer('created_at').notNull(), updatedAt: integer('updated_at').notNull(),
+  supersedesId: text('supersedes_id'),
+}, (t) => [index('idx_memories_scope').on(t.scope, t.projectId, t.status)])
+export const memoryJobs = sqliteTable('memory_jobs', {
+  conversationId: text('conversation_id').primaryKey().references(() => conversations.id, { onDelete: 'cascade' }),
+  cursor: integer('cursor').notNull().default(0), status: text('status').notNull().default('pending'), error: text('error'), updatedAt: integer('updated_at').notNull(),
+})
+export const personalSettings = sqliteTable('personal_settings', { id: text('id').primaryKey(), value: text('value').notNull() })
+export const auxiliaryUsage = sqliteTable('auxiliary_usage', {
+  id: integer('id').primaryKey({ autoIncrement: true }), model: text('model').notNull(), inputTokens: integer('input_tokens').notNull(), outputTokens: integer('output_tokens').notNull(), createdAt: integer('created_at').notNull(),
+})
+export const streamEvents = sqliteTable('stream_events', { id: integer('id').primaryKey({ autoIncrement: true }), event: text('event').notNull() })
+export const dispatchEvents = sqliteTable('dispatch_events', {
+  id: integer('id').primaryKey(), conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }), event: text('event').notNull(),
+})
