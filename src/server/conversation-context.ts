@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 import { db, schema } from '@/db/client'
@@ -19,7 +19,7 @@ import {
  */
 
 export interface BuildHistoryOptions {
-  /** 取最近多少条 messages（不含 pinned）。默认 20。 */
+  /** 默认保留全部未被摘要覆盖的消息，避免静默丢失历史。 */
   maxTurns?: number
   /** 是否注入 pinned messages。默认 true。 */
   includePinned?: boolean
@@ -27,13 +27,12 @@ export interface BuildHistoryOptions {
   excludeMessageId?: string
   /**
    * history 的 token 预算上限（仅本字段，不含 system / currentUser）。
-   * undefined 表示不做 token 截断，只按 maxTurns 截。详见 spec 13 「Token 预算」节。
-   * pinned 永远不被截断（即便整体超 budget）。
+   * undefined 不检查预算；指定预算时摘要和 pinned 一并计入，超出则抛错。
    */
   tokenBudget?: number
 }
 
-const DEFAULT_MAX_TURNS = 20
+const DEFAULT_MAX_TURNS = 1000000
 
 export async function buildHistoryFor(
   agentId: string,
@@ -54,7 +53,7 @@ export async function buildHistoryFor(
   if (excludeMessageId) recentWhereClauses.push(ne(schema.messages.id, excludeMessageId))
   if (latestSummary) {
     recentWhereClauses.push(
-      gt(schema.messages.createdAt, latestSummary.coveredUntilCreatedAt),
+      sql`messages.rowid > (SELECT rowid FROM messages WHERE id = ${latestSummary.coveredUntilMessageId})`,
     )
   }
   const recentWhere = and(...recentWhereClauses)
@@ -63,7 +62,7 @@ export async function buildHistoryFor(
     .select()
     .from(schema.messages)
     .where(recentWhere)
-    .orderBy(desc(schema.messages.createdAt))
+    .orderBy(desc(sql`messages.rowid`))
     .limit(maxTurns)
 
   // 始终拉 conversation 用于 pinned ids + agentIds（agent 名字 map 给 Phase C 跨 agent 渲染用）
@@ -83,6 +82,7 @@ export async function buildHistoryFor(
         .where(
           and(
             inArray(schema.messages.id, pinnedIds),
+            eq(schema.messages.conversationId, conversationId),
             eq(schema.messages.status, 'complete'),
           ),
         )
@@ -112,7 +112,7 @@ export async function buildHistoryFor(
   const artifactIds = collectArtifactIds(merged)
   const artifactTitles = await loadArtifactTitles(artifactIds)
 
-  // 先序列化全量，再按 token 预算从老往新丢非 pinned 项
+  // 全量序列化后统一检查预算，不静默丢弃旧消息或固定约束。
   const items: Array<{
     msgId: string
     isPinned: boolean
@@ -138,13 +138,11 @@ export async function buildHistoryFor(
     items.push({ msgId: msg.id, isPinned: pinnedIdSet.has(msg.id), serialized, tokens })
   }
 
-  if (tokenBudget !== undefined && tokenBudget > 0) {
-    let total = items.reduce((s, it) => s + it.tokens, 0)
-    // 超预算时，从老到新（按 items 顺序）丢非 pinned，直到符合预算
-    for (let i = 0; i < items.length && total > tokenBudget; i++) {
-      if (items[i].isPinned) continue
-      total -= items[i].tokens
-      items[i].tokens = -1 // 标记丢弃；保留 isPinned/order 但稍后过滤
+  // Overflow must trigger compaction or a visible error, never silent loss of constraints.
+  if (tokenBudget !== undefined) {
+    const total = items.reduce((sum, item) => sum + item.tokens, 0)
+    if (!Number.isFinite(tokenBudget) || tokenBudget < 0 || total > tokenBudget) {
+      throw new Error(`上下文超过预算（${total}/${tokenBudget} tokens）；请压缩历史或减少固定上下文。`)
     }
   }
 
@@ -244,7 +242,7 @@ function renderSelfAssistantParts(
 
 /**
  * Phase C：把别 agent 的 message 转成 [名字]: text 的 user role 消息注入给当前 agent。
- * 只保留 text / code / artifact_ref 折叠占位；drop thinking / tool_use / tool_result。
+ * 保留公开内容和工具执行证据，排除 thinking。
  * 详见 specs/13-conversation-context.md「群聊 / Orchestrator」节。
  */
 function renderOtherAgentAsUser(
@@ -283,6 +281,12 @@ function renderAgentPublicText(
         } else {
           buf.push(`[部署失败: ${p.deployment.title} (${p.deployment.error ?? 'unknown error'})]`)
         }
+        break
+      case 'tool_use':
+        buf.push(`[历史工具调用 ${p.callId}: ${p.toolName} ${JSON.stringify(p.args)}]`)
+        break
+      case 'tool_result':
+        buf.push(`[历史工具结果 ${p.callId}, error=${!!p.isError}: ${JSON.stringify(p.result)}]`)
         break
       // 跨 run 历史只保留公开输出；thinking / tool_use / tool_result 不回放。
       default:
