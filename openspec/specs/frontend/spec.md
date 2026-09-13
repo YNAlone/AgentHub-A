@@ -1,5 +1,7 @@
 # Frontend
 
+> 全应用视觉与导航现行契约见 [Spec 17](../../../specs/17-workspace-visual-system.md)：侧栏导航、主区域管理页面及统一灰阶控件覆盖本文旧布局描述，数据与传输契约保持不变。
+
 > 本机个人版当前契约见 [Spec 16](../../../specs/16-local-personal.md)。本期认证、项目/记忆、SDK/任务恢复、上下文预算和 SSE 恢复覆盖旧契约；远程伴随暂停。
 
 ## Purpose
