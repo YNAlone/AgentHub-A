@@ -92,3 +92,51 @@
 - `specs/16-local-personal.md`：同步管理页导航、筛选、滚动和主题契约。
 - 验证：TypeScript、页面与用例 lint 通过；完整 Playwright 7 项通过。使用隔离数据在 Edge 实屏检查项目/记忆/上下文、深色主题与 390px 窄窗口，底部设置可滚动访问、无水平溢出、无浏览器运行错误。生产构建通过（Next 编译、类型检查及静态页面生成完成）。
 - 本次只调整管理页及对应文档/用例，无新增依赖，不触碰真实数据及用户已有未提交修改。
+
+
+## 2026-09-13 — 全应用灰阶工作空间
+
+- 用户授权将项目与记忆页的视觉风格扩展到本机应用全部页面；基线为 `d77390d`，规格见 Spec 17。
+- 统一浅深色主题、字体、按钮、输入、菜单、标签、弹窗、焦点、边框和间距，保留审批/失败/成功状态的语义色。修正字体变量自引用。
+- 新增主工作空间布局：对话、Agent 库、产物库与用量分析在主区域切换；侧栏保留导航、会话入口、设置和主题切换。
+- 重排 Agent 卡片、产物行、用量卡片及空状态；优化聊天欢迎页、消息、输入器、工具/审批/引用和文件/产物预览宿主界面。
+- 设置改为侧向分类导航，统一创建 Agent、创建会话、搜索及其他公共弹窗；配对页使用一致的卡片、状态提示与提交控件。
+- 修复跨页面全局搜索返回会话；回归发现新数据库没有搜索索引，将既有 FTS 迁移接入 bootstrap，首次建立时回填历史，后续启动避免重复全量回填。该修复单独提交。
+- 验证：41 个测试文件通过，220 项通过、1 项跳过；Playwright 9 项全部通过（包含跨页面搜索与主导航），TypeScript 与全项目 lint 通过。生产构建通过（Next 编译、TypeScript、25 个静态页面生成与优化均完成）。
+- 实屏覆盖对话、Agent 库、创建 Agent、产物库/文档预览、分析、设置、新会话、搜索及配对，另检查深色与 390px 窄窗口；窄窗口无水平溢出，捕获过程中无浏览器运行错误。文件侧栏检查了宿主与加载状态，未将其截图作为文件内容加载成功的证据。
+- 使用隔离测试数据；未调用真实付费模型，未进行 Electron 安装包/真实 GUI 安装验收。遗留独立手机应用仍停用，用户生成的产物内容不重绘。无新增依赖。
+- 下列为本次源代码与规格变更清单（含本记录），原工作区已有改动不纳入本次提交：
+
+- `docs/development-change-log.md`
+- `e2e/local-reliability.spec.ts`
+- `openspec/specs/frontend/spec.md`
+- `specs/09-frontend-architecture.md`
+- `specs/17-workspace-visual-system.md`
+- `src/app/globals.css`
+- `src/app/page.tsx`
+- `src/app/pair/page.tsx`
+- `src/app/workspace.css`
+- `src/components/agent-avatar.tsx`
+- `src/components/agent-library.tsx`
+- `src/components/artifact-library.tsx`
+- `src/components/artifact-preview-panel.tsx`
+- `src/components/ask-user-question-dialog.tsx`
+- `src/components/chat-panel.tsx`
+- `src/components/dispatch-plan-card.tsx`
+- `src/components/file-explorer-panel.tsx`
+- `src/components/global-search.tsx`
+- `src/components/message-input.tsx`
+- `src/components/message-list.tsx`
+- `src/components/message-parts.tsx`
+- `src/components/pending-bash-commands-panel.tsx`
+- `src/components/pending-write-diff-tab.tsx`
+- `src/components/pending-writes-panel.tsx`
+- `src/components/selection-popover.tsx`
+- `src/components/settings-dialog.tsx`
+- `src/components/sidebar.tsx`
+- `src/components/ui/tabs.tsx`
+- `src/components/usage-dashboard.tsx`
+- `src/components/workspace-shell.tsx`
+- `src/db/bootstrap.ts`
+- `src/db/message-search-schema.ts`
+- `src/db/migrate-add-message-search.ts`
