@@ -21,19 +21,8 @@ const SIZE_CLASS: Record<NonNullable<AgentAvatarProps['size']>, string> = {
   lg: 'size-9 text-sm',
 }
 
-// 10 色调色板，饱和度统一，白字 contrast 足够
-const PALETTE = [
-  'bg-rose-500',
-  'bg-orange-500',
-  'bg-amber-600',
-  'bg-emerald-500',
-  'bg-teal-500',
-  'bg-sky-500',
-  'bg-indigo-500',
-  'bg-violet-500',
-  'bg-fuchsia-500',
-  'bg-slate-600',
-]
+// Stable neutral tones distinguish agents without competing with status indicators.
+const PALETTE = ['bg-zinc-600', 'bg-stone-600', 'bg-neutral-700', 'bg-zinc-500', 'bg-stone-500']
 
 function hashIndex(id: string, mod: number) {
   let h = 5381
@@ -70,7 +59,7 @@ export function AgentAvatar({ agent, size = 'md', className }: AgentAvatarProps)
   return (
     <div
       className={cn(
-        'flex shrink-0 select-none items-center justify-center rounded-full font-semibold text-white',
+        'flex shrink-0 select-none items-center justify-center rounded-lg font-medium text-white',
         SIZE_CLASS[size],
         color,
         className,
