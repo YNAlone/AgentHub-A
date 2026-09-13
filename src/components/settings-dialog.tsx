@@ -245,7 +245,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+      <DialogContent className="workspace-settings grid max-h-[calc(100vh-2rem)] sm:max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
           <DialogDescription className="sr-only">AgentHub 设置</DialogDescription>
@@ -646,13 +646,13 @@ function KeyField({
           </button>
         )}
       </div>
-      {type === 'password' && <button type="button" className="self-start text-xs text-muted-foreground underline" onClick={() => onChange(value === CLEAR_SECRET ? CONFIGURED_SECRET : CLEAR_SECRET)}>{value === CLEAR_SECRET ? '撤销清空' : '清空已保存的凭据'}</button>}
+      {type === 'password' && value && <button type="button" className="self-start text-xs text-muted-foreground underline" onClick={() => onChange(value === CLEAR_SECRET ? CONFIGURED_SECRET : CLEAR_SECRET)}>{value === CLEAR_SECRET ? '撤销清空' : '清空已保存的凭据'}</button>}
       {hint && <p className="text-[10px] text-muted-foreground/80">{hint}</p>}
     </div>
   )
 }
 
-/** 设置 button 入口，挂在 Sidebar header。 */
+/** Settings remain accessible from the persistent sidebar footer. */
 export function SettingsButton() {
   const [open, setOpen] = useState(false)
 

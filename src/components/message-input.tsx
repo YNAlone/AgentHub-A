@@ -772,7 +772,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
   }
 
   return (
-    <div className="relative shrink-0 border-t bg-background p-3">
+    <div data-surface="composer" className="relative shrink-0 bg-background p-3">
       {/* 引用预览 */}
       {replyMessage && (
         <div className="mb-2">
@@ -786,10 +786,10 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
 
       {/* 选区改写引用块 */}
       {pendingQuote && (
-        <div className="mb-2 flex items-start gap-2 rounded-md border border-[#3370FF]/30 bg-[#3370FF]/5 px-2 py-1.5 text-xs">
-          <Sparkles className="mt-0.5 size-3 shrink-0 text-[#3370FF]" />
+        <div className="mb-2 flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 px-2 py-1.5 text-xs">
+          <Sparkles className="mt-0.5 size-3 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
-            <div className="font-medium text-[#3370FF]">
+            <div className="font-medium text-primary">
               {pendingQuote.kind === 'ask' ? '提问' : '改写'} · {pendingQuote.sourceLabel}
             </div>
             <pre className="mt-0.5 line-clamp-3 whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground">

@@ -5,14 +5,11 @@ import type { Project } from '@/server/project-service'
 import { Archive, ArchiveRestore, BarChart3, Bot, ChevronDown, ChevronRight, Layers, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Plus, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { AgentLibrary } from '@/components/agent-library'
 import { AgentAvatar } from '@/components/agent-avatar'
 import { GlobalSearchTrigger } from '@/components/global-search-trigger'
-import { ArtifactLibrary } from '@/components/artifact-library'
 import { NewConversationDialog } from '@/components/new-conversation-dialog'
 import { SettingsButton } from '@/components/settings-dialog'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { UsageDashboard } from '@/components/usage-dashboard'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,7 +36,8 @@ import { useAppStore, useConversationList, useUnreadCount } from '@/stores/app-s
 
 type Mode = 'conversations' | 'artifacts' | 'agents' | 'analytics'
 
-export function Sidebar() {
+export function Sidebar({ mode, onModeChange }: { mode: Mode; onModeChange: (mode: Mode) => void }) {
+  const setMode = onModeChange
   const mobileOpen = useAppStore((s) => s.mobileSidebarOpen)
   const setMobileSidebarOpen = useAppStore((s) => s.setMobileSidebarOpen)
   const conversations = useConversationList()
@@ -51,7 +49,6 @@ export function Sidebar() {
   const removeConversation = useAppStore((s) => s.removeConversation)
   const upsertConversation = useAppStore((s) => s.upsertConversation)
 
-  const [mode, setMode] = useState<Mode>('conversations')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
@@ -128,7 +125,7 @@ export function Sidebar() {
         setMobileSidebarOpen(true)
       }
     })
-  }, [setMobileSidebarOpen])
+  }, [setMobileSidebarOpen, setMode])
 
   const deleteTarget = deleteTargetId ? conversations.find((c) => c.id === deleteTargetId) : null
 
@@ -157,8 +154,8 @@ export function Sidebar() {
       )}
       <aside
         className={cn(
-          'flex shrink-0 flex-col overflow-hidden border-r bg-card transition-[width,transform] duration-200',
-          collapsed ? 'w-14' : 'w-72',
+          'workspace-sidebar flex shrink-0 flex-col overflow-hidden border-r bg-sidebar transition-[width,transform] duration-200',
+          collapsed ? 'w-14' : 'w-[228px]',
           // 移动端：固定定位抽屉，默认 -translate-x-full 隐藏；打开时滑入
           'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-72',
           mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full',
@@ -167,19 +164,17 @@ export function Sidebar() {
       {/* Header */}
       <div
         className={cn(
-          'flex shrink-0 items-center border-b',
+          'workspace-brand flex shrink-0 items-center',
           collapsed ? 'flex-col gap-1 px-1 py-2' : 'justify-between px-4 py-3',
         )}
       >
         {!collapsed && (
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold">AgentHub</h1>
-            <p className="truncate text-xs text-muted-foreground">多 Agent 协作平台</p>
+            <p className="mt-1 truncate text-[11px] text-muted-foreground">本机个人工作空间</p>
           </div>
         )}
         <div className={cn('flex items-center', collapsed ? 'flex-col gap-1' : 'gap-0.5')}>
-          <SettingsButton />
-          <ThemeToggle />
           <Button
             size="icon"
             variant="ghost"
@@ -206,7 +201,7 @@ export function Sidebar() {
       {/* Tab 切换（两排垂直排列）*/}
       <div
         className={cn(
-          'shrink-0 border-b',
+          'workspace-nav shrink-0',
           collapsed ? 'flex flex-col items-center gap-1 px-1 py-2' : 'flex flex-col gap-1 px-3 py-2',
         )}
       >
@@ -244,7 +239,9 @@ export function Sidebar() {
         />
       </div>
 
-      {/* 内容区按 mode 分发 */}
+      {!collapsed && <Link href="/personal" className="workspace-personal-link"><Layers className="size-4" />项目与记忆<ChevronRight className="ml-auto size-3" /></Link>}
+
+      {/* Conversations stay in navigation; other libraries occupy the main workspace. */}
       {mode === 'conversations' ? (
         <>
           {/* New conversation button */}
@@ -270,7 +267,6 @@ export function Sidebar() {
             )}
           </div>
 
-          {!collapsed && <Link href="/personal" className="mx-3 my-1 rounded border px-3 py-2 text-sm hover:bg-accent">项目与记忆</Link>}
           {!collapsed && <select aria-label="按项目查看对话" className="mx-3 my-1 rounded border bg-background p-2 text-xs" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">全部项目</option><option value="unassigned">未归属的临时会话</option>{projectData.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>}
 
           {/* Search box (only when not collapsed) */}
@@ -387,13 +383,11 @@ export function Sidebar() {
             )}
           </ScrollArea>
         </>
-      ) : mode === 'artifacts' ? (
-        !collapsed && <ArtifactLibrary />
-      ) : mode === 'agents' ? (
-        !collapsed && <AgentLibrary />
-      ) : (
-        !collapsed && <UsageDashboard />
-      )}
+      ) : <div className="flex-1" />}
+      <div className={cn('workspace-sidebar-footer', collapsed && 'flex-col')}>
+        {!collapsed && <span className="mr-auto text-[11px] text-muted-foreground">本机 · 私人</span>}
+        <SettingsButton /><ThemeToggle />
+      </div>
 
       <NewConversationDialog open={dialogOpen} onOpenChange={setDialogOpen} projectId={projectFilter === 'all' || projectFilter === 'unassigned' ? undefined : projectFilter} />
 
@@ -658,7 +652,7 @@ function TabButton({
         title={label}
         className={cn(
           'flex size-9 items-center justify-center rounded-md transition',
-          active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent',
+          active ? 'bg-sidebar-accent text-sidebar-accent-foreground' : 'text-muted-foreground hover:bg-accent',
         )}
       >
         {icon}
@@ -672,7 +666,7 @@ function TabButton({
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition',
         active
-          ? 'bg-primary text-primary-foreground'
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
     >

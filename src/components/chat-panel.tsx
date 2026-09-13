@@ -2,6 +2,7 @@
 
 import { AlertTriangle, FilePenLine, FolderOpen, FolderTree, Layers, Menu, MessagesSquare, UserPlus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 
 import { InterruptedRuns } from '@/components/interrupted-runs'
 import { AddAgentDialog } from '@/components/add-agent-dialog'
@@ -91,18 +92,12 @@ export function ChatPanel() {
 
   if (!conv) {
     return (
-      <main className="flex min-w-0 flex-1 items-center justify-center bg-background">
-        <div className="flex max-w-sm flex-col items-center gap-4 px-6 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
-            <MessagesSquare className="size-7 text-muted-foreground" />
-          </div>
-          <div className="space-y-1.5">
-            <h2 className="text-lg font-semibold">开始你的多 Agent 协作</h2>
-            <p className="text-sm leading-6 text-muted-foreground">
-              从左侧选择一个会话继续聊天，或点击「+ 新建对话」选择一个或多个 Agent 开始
-            </p>
-          </div>
-        </div>
+      <main className="workspace-empty">
+        <Button className="workspace-empty-nav md:hidden" variant="ghost" size="icon" aria-label="打开导航" onClick={() => setMobileSidebarOpen(true)}><Menu /></Button>
+        <MessagesSquare />
+        <h2>今天，一起完成什么？</h2>
+        <p>从左侧新建一段对话，选择你的 Agent。<br />代码、文档和想法，都可以从这里开始。</p>
+        <Link href="/personal"><Layers className="size-4" />整理项目与记忆</Link>
       </main>
     )
   }
@@ -110,7 +105,7 @@ export function ChatPanel() {
   const participantAgents = conv.agentIds.map((id) => agents[id]).filter(Boolean)
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
+    <main data-surface="chat" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
       <header className="flex shrink-0 items-center gap-3 overflow-hidden border-b px-3 py-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
           {/* 移动端汉堡按钮：打开 sidebar 抽屉 */}
@@ -204,7 +199,7 @@ export function ChatPanel() {
                   key={tabId}
                   label={`diff: ${name}`}
                   tooltip={pw?.path}
-                  icon={<FilePenLine className="size-3 text-[#3370FF]" />}
+                  icon={<FilePenLine className="size-3 text-primary" />}
                   active={activeTab === tabId}
                   onClick={() => setActiveTab(conv.id, tabId)}
                   onClose={() => closeFile(conv.id, tabId)}
@@ -326,7 +321,7 @@ function TabButton({
         'group flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 transition',
         active
           ? highlight
-            ? 'border-[#3370FF]/40 bg-[#3370FF]/5 text-foreground shadow-sm'
+            ? 'border-primary/40 bg-primary/5 text-foreground shadow-sm'
             : 'border-primary/30 bg-background shadow-sm'
           : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground',
       )}
