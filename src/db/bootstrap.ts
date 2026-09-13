@@ -1,3 +1,4 @@
+import { ensureMessageSearchSchema } from './message-search-schema'
 /**
  * DB 启动期自举：建表 + 自动 seed 内置 agent。
  *
@@ -304,6 +305,7 @@ function upgradeBuiltinAgents(sqlite: Database.Database): void {
 export function bootstrapDatabase(sqlite: Database.Database): void {
   ensureSchema(sqlite)
   migratePersonalSchema(sqlite)
+  ensureMessageSearchSchema(sqlite)
   ensureBuiltinAgents(sqlite)
   upgradeBuiltinAgents(sqlite)
 }
