@@ -1,5 +1,7 @@
 # Spec 14 -- 移动端伴随 App（Capacitor Companion）
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > 目标：做一个真正安装在手机上的 AgentHub 伴随 App，用来远程观察桌面端会话状态、任务完成情况，审批文件修改，并通过对话向 Agent 提出意见。
 >
 > **关键决策（已定）**：移动端是 **Capacitor App**，不是手机浏览器页面 / PWA；桌面端 AgentHub 仍是唯一 host，负责 SQLite、workspace、Agent、工具执行；手机 App 只作为远程控制客户端。通信优先走 Tailscale / tailnet，也支持 LAN 直连。

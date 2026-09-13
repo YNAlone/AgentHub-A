@@ -1,5 +1,7 @@
 # Spec 05 — AgentPlatformAdapter 接口
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > 适配器层屏蔽不同 Agent 平台（Claude Code、Codex、自配置 Agent）的 API 差异，对上层提供统一的事件流。**修改接口需先讨论。**
 
 源文件：`src/server/adapters/`

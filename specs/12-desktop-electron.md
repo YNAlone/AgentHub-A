@@ -1,5 +1,7 @@
 # Spec 12 — 桌面版（Electron）
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > AgentHub 以 Electron 打包成 macOS `.dmg` / Windows `.exe` 安装包，单文件双击即用，不要求用户预装 Node / pnpm。本 spec 定义打包方案、进程模型、路径迁移、native 依赖处理与故意不做的事。
 >
 > 源文件：`electron/`（main / preload / 类型）、`scripts/electron-*.ts`（打包辅助）、`package.json`（build 字段）、`next.config.ts`（standalone 输出）。

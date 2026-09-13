@@ -1,5 +1,7 @@
 # Spec 08 — 数据库 Schema
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > Drizzle ORM + SQLite。本 spec 描述 9 张表的字段、索引、外键级联策略，是 Spec 01 实体的物理映射。**修改字段需先讨论。**
 >
 > 7 张「业务表」（agents / conversations / messages / artifacts / workspaces / attachments / agent_runs）映射 Spec 01 的 7 个实体；`conversation_context_summaries` 是上下文压缩基础设施表；`app_settings` 是单行配置表，不对应实体。

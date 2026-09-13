@@ -62,9 +62,9 @@ L1 Persistence（Drizzle + SQLite + workspace 文件系统）
 - Adapter **永远不**写 DB，它只负责事件流翻译
 - 工具执行（ToolExecutor）属 L3，不是 Adapter 的事
 
-### 3.2 七个核心实体（详见 `specs/01-core-entities.md`）
+### 3.2 核心实体（详见 `specs/01-core-entities.md` 与 `specs/16-local-personal.md`）
 
-`Agent` / `Conversation` / `Message` / `Artifact` / `Workspace` / `Tool` / `AgentRun`
+`Agent` / `Project` / `Conversation` / `Message` / `Artifact` / `Workspace` / `Tool` / `AgentRun` / `Memory`
 
 修改任一实体的字段时，**必须同步更新 spec 文档**。
 
@@ -166,7 +166,10 @@ Orchestrator 走同一个 `AgentRunner`，只是多了 `dispatch_to_agent` 工�
 - **sandbox 模式**：workspace 单目录上限 100MB / 1000 文件（超过拒绝写入）
 - **local 模式**：不强制配额（用户用 git 等管理自己的真实项目）；创建会话时 `isPathSafe` 已拒过明显敏感目录（`~/.ssh`、`/etc` 等）
 
-### 5.4 API Key 管理
+### 5.4 本机访问与 API Key 管理
+
+涉及 HTTP 认证、凭据 DTO、项目归属、SDK 恢复、自动压缩、SSE 或长期记忆时，先读 `specs/16-local-personal.md`。本机个人版契约以该规格为准，覆盖旧版远程伴随行为。变更与验收证据写入 `docs/development-change-log.md`。
+
 
 Key 来源按优先级（详见 `src/server/settings-service.ts` 与 `src/server/agent-runner.ts:buildAdapterInput`）：
 
@@ -178,6 +181,7 @@ Codex adapter 额外约束：运行时 `CODEX_HOME` / `CODEX_SQLITE_HOME` 指向
 
 约束：
 
+- 浏览器只获得凭据配置标记；运行时服务保留原值，响应使用字段白名单。空编辑保留，显式 null 清空。
 - **绝不**在代码中硬编码 key
 - **不引入** keychain / safeStorage / 第三方加密存储 —— 本地单用户场景，DB 文件系统权限已经够；引入 keychain 增加跨平台复杂度（详见 spec 11 与 README）
 - 桌面版（Electron，详见 Spec 12）也用这套机制；只是 DB 文件位置改为 `app.getPath('userData')`
@@ -298,6 +302,7 @@ Codex adapter 额外约束：运行时 `CODEX_HOME` / `CODEX_SQLITE_HOME` 指向
 - `12-desktop-electron.md` — 桌面版（Electron 打包 DMG / EXE，进程模型 / 路径迁移）
 - `13-conversation-context.md` — 跨 run 对话历史序列化（MessagePart → OpenAI ChatMessage、pinned 注入、agent 视角）
 - `14-mobile-remote.md` — 移动端伴随 App（Capacitor / Tailscale / 远程审批）
+- `16-local-personal.md` — 本机访问、项目、SDK/界面恢复、自动压缩、可靠 SSE 与长期记忆
 - `15-external-mcp.md` — 外部 MCP 工具接入（设计提案,未实现;统一三 adapter 接入用户配置的 MCP server）
 
 ### `skills/`（可复用开发任务模板）

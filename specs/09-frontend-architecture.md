@@ -1,5 +1,7 @@
 # Spec 09 — 前端架构
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > L4（State + Transport）+ L5（UI 组件）的内部组织。本 spec 定义状态结构、SSE 接入、事件应用 reducer、派生 hooks 与组件树。
 
 源文件：`src/stores/app-store.ts`、`src/components/stream-provider.tsx`、`src/app/page.tsx`、`src/components/`
