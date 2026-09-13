@@ -1,9 +1,10 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import Database from 'better-sqlite3'
 
 import { bootstrapDatabase } from '../src/db/bootstrap'
+import { E2E_AUTH } from './local-auth'
 
 const E2E_DATA_DIR = path.resolve('.agenthub-data-e2e')
 
@@ -15,12 +16,17 @@ const E2E_DATA_DIR = path.resolve('.agenthub-data-e2e')
  * better-sqlite3 须为当前 Node ABI（e2e 脚本前置 ensure-node-sqlite 保证）。
  */
 export default function globalSetup() {
-  rmSync(E2E_DATA_DIR, { recursive: true, force: true })
+  if (path.basename(E2E_DATA_DIR) !== '.agenthub-data-e2e') throw new Error('Unsafe E2E data directory')
   mkdirSync(path.join(E2E_DATA_DIR, 'workspaces'), { recursive: true })
 
   const sqlite = new Database(path.join(E2E_DATA_DIR, 'agenthub.db'))
   try {
+    sqlite.pragma('foreign_keys = ON')
     bootstrapDatabase(sqlite)
+    // The server may already hold this database on Windows; reset fixtures through SQLite.
+    sqlite.exec("DELETE FROM conversations; DELETE FROM agents WHERE id = 'ag_e2e_mock'; DELETE FROM app_settings; DELETE FROM memories; DELETE FROM stream_events; DELETE FROM sdk_sessions;")
+    sqlite.prepare("INSERT INTO personal_settings VALUES ('singleton', ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value").run(JSON.stringify({ memoryEnabled: false }))
+    writeFileSync(path.join(E2E_DATA_DIR, 'local-auth.json'), JSON.stringify(E2E_AUTH), { mode: 0o600 })
     sqlite
       .prepare(
         `INSERT INTO agents (

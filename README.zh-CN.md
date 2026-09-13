@@ -1,5 +1,7 @@
 # AgentHub
 
+> 本期为本机个人版：浏览器需要配对，远程伴随访问已关闭。启动与升级请先读[本机使用说明](docs/local-personal-quickstart.md)，实现与验收见 [Spec 16](specs/16-local-personal.md) 和[开发变更记录](docs/development-change-log.md)。
+
 <p align="center">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=0B1F2A">

@@ -1,5 +1,7 @@
 # AgentHub
 
+> This release is for personal use on this computer. Browser pairing is required; remote companion access is disabled. See [local setup](docs/local-personal-quickstart.md), [Spec 16](specs/16-local-personal.md), and [change log](docs/development-change-log.md).
+
 <p align="center">
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=0B1F2A">

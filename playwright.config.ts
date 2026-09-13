@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 import { defineConfig, devices } from '@playwright/test'
+import { e2eSession } from './e2e/local-auth'
 
 /** E2E 专用隔离数据目录（AGENTHUB_DATA_DIR），与 global-setup 共用同一路径。 */
 export const E2E_DATA_DIR = path.resolve('.agenthub-data-e2e')
@@ -17,13 +18,14 @@ export default defineConfig({
   globalSetup: './e2e/global-setup.ts',
   globalTeardown: './e2e/global-teardown.ts',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://127.0.0.1:3130',
+    storageState: { cookies: [{ name: 'agenthub_session', value: e2eSession(), domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Strict' }], origins: [] },
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], channel: process.env.PLAYWRIGHT_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : undefined) } }],
   webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:3000/api/platform',
+    command: 'node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3130',
+    url: 'http://127.0.0.1:3130/pair',
     reuseExistingServer: false,
     timeout: 120_000,
     env: { ...process.env, AGENTHUB_DATA_DIR: E2E_DATA_DIR },
