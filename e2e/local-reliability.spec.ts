@@ -19,8 +19,12 @@ test('创建项目后可维护多段对话并查看长期记忆开关', async ({
     expect(result.status()).toBe(201)
   }
   await page.goto('/personal')
-  await expect(page.getByRole('heading', { name: '上下文与后台提取', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '项目', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: '项目对话一' })).toBeVisible()
   await expect(page.getByRole('link', { name: '项目对话二' })).toBeVisible()
+  await page.getByRole('button', { name: '长期记忆', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '长期记忆', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '上下文', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: '允许后台提取记忆' })).not.toBeChecked()
+  await expect(page.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
 })
