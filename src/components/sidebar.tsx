@@ -1,5 +1,7 @@
 'use client'
 
+import Link from 'next/link'
+import type { Project } from '@/server/project-service'
 import { Archive, ArchiveRestore, BarChart3, Bot, ChevronDown, ChevronRight, Layers, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Pin, PinOff, Plus, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -57,14 +59,23 @@ export function Sidebar() {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [projectFilter, setProjectFilter] = useState('all')
+  const [projectData, setProjectData] = useState<{ projects: Project[]; memberships: Record<string, string> }>({ projects: [], memberships: {} })
+
+  useEffect(() => {
+    const load = () => { void fetch('/api/projects').then((response) => { if (!response.ok) throw new Error('项目加载失败'); return response.json() }).then(setProjectData).catch(console.error) }
+    load()
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
+  }, [dialogOpen])
 
   const activeConversations = useMemo(
-    () => conversations.filter((c) => !c.archived),
-    [conversations],
+    () => conversations.filter((c) => !c.archived && (projectFilter === 'all' || (projectData.memberships[c.id] ?? 'unassigned') === projectFilter)),
+    [conversations, projectFilter, projectData.memberships],
   )
   const archivedConversations = useMemo(
-    () => conversations.filter((c) => c.archived),
-    [conversations],
+    () => conversations.filter((c) => c.archived && (projectFilter === 'all' || (projectData.memberships[c.id] ?? 'unassigned') === projectFilter)),
+    [conversations, projectFilter, projectData.memberships],
   )
 
   const filteredConversations = useMemo(() => {
@@ -259,6 +270,9 @@ export function Sidebar() {
             )}
           </div>
 
+          {!collapsed && <Link href="/personal" className="mx-3 my-1 rounded border px-3 py-2 text-sm hover:bg-accent">项目与记忆</Link>}
+          {!collapsed && <select aria-label="按项目查看对话" className="mx-3 my-1 rounded border bg-background p-2 text-xs" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">全部项目</option><option value="unassigned">未归属的临时会话</option>{projectData.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>}
+
           {/* Search box (only when not collapsed) */}
           {!collapsed && activeConversations.length > 0 && (
             <div className="shrink-0 flex items-center gap-2 px-3 pt-2 pb-2">
@@ -381,7 +395,7 @@ export function Sidebar() {
         !collapsed && <UsageDashboard />
       )}
 
-      <NewConversationDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+      <NewConversationDialog open={dialogOpen} onOpenChange={setDialogOpen} projectId={projectFilter === 'all' || projectFilter === 'unassigned' ? undefined : projectFilter} />
 
       <Dialog open={!!deleteTargetId} onOpenChange={(open) => !open && setDeleteTargetId(null)}>
         <DialogContent>

@@ -121,6 +121,7 @@ export async function fetchConversations(): Promise<ConversationWithMeta[]> {
 }
 
 export interface CreateConversationBody {
+  projectId?: string
   title?: string
   mode: 'single' | 'group'
   agentIds: string[]
