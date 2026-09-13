@@ -3,6 +3,7 @@
 import { AlertTriangle, FilePenLine, FolderOpen, FolderTree, Layers, Menu, MessagesSquare, UserPlus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { InterruptedRuns } from '@/components/interrupted-runs'
 import { AddAgentDialog } from '@/components/add-agent-dialog'
 import { AgentInfoPopover } from '@/components/agent-info-popover'
 import { AskUserQuestionDialog } from '@/components/ask-user-question-dialog'
@@ -228,6 +229,7 @@ export function ChatPanel() {
       {/* 主体：chat / file tab / pending diff tab */}
       {activeTab === 'chat' || !openFiles.includes(activeTab) ? (
         <>
+          <InterruptedRuns conversationId={conv.id} />
           <PinnedMessagesBar conversationId={conv.id} />
           <MessageList conversationId={conv.id} />
           <PendingBashCommandsPanel conversationId={conv.id} />

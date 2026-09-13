@@ -52,10 +52,12 @@ export interface AdapterInput {
    * 跨 run 对话历史（OpenAI ChatMessage 格式），不含当前触发消息。
    * 由 AgentRunner 通过 conversation-context.buildHistoryFor 序列化，详见 specs/13-conversation-context.md。
    * - CustomAgentAdapter：拼到 [system, ...history, currentUser] 中间
-   * - ClaudeCodeAdapter / CodexAdapter：忽略（走 SDK 自己的 session resume）
+   * - ClaudeCodeAdapter / CodexAdapter：新会话注入历史，已关联会话通过 SDK resume。
    * - MockAdapter：忽略
    */
   history?: ChatCompletionMessageParam[]
+  /** Checked again after the SDK lock is acquired so queued work cannot use deleted memory. */
+  contextState?: { memoryBlock: string; projectId: string | null; summaryId: string | null }
 
   /** 仅 CustomAgentAdapter 使用（OpenAI 兼容协议特有的模型选择） */
   customConfig?: {

@@ -31,6 +31,7 @@ import {
   createAdapterEvent,
   isAbortLikeError,
 } from './adapter-utils'
+import { missingSession, restoredPrompt } from './restored-prompt'
 import { adapterSessionKey, codexSessions } from './session-store'
 import type { AdapterInput, AgentPlatformAdapter } from './types'
 
@@ -106,10 +107,12 @@ export class CodexAdapter implements AgentPlatformAdapter {
     const toolCallIdByItemId = new Map<string, string>()
     const completedToolItemIds = new Set<string>()
 
+    let initialized = false
     try {
-      const { events } = await thread.runStreamed(buildCodexInput(input), { signal })
+      const { events } = await thread.runStreamed(buildCodexInput({ ...input, prompt: restoredPrompt(input, !!previousThreadId) }), { signal })
       for await (const event of events) {
         if (event.type === 'thread.started') {
+          initialized = true
           codexSessions.set(sessionKey, event.thread_id)
           continue
         }
@@ -176,6 +179,15 @@ export class CodexAdapter implements AgentPlatformAdapter {
         }
       }
     } catch (err) {
+      if (!signal.aborted && previousThreadId && missingSession(err)) {
+        codexSessions.delete(sessionKey)
+        if (!initialized) {
+          yield baseEvent({ type: 'part.start', messageId, partIndex: 0, part: { type: 'text', content: '原 SDK 记录不可用，正在从应用保存的历史恢复。' } })
+          yield baseEvent({ type: 'message.end', messageId })
+          yield* this.stream(input, signal)
+          return
+        }
+      }
       if (!isAbortLikeError(err, signal)) throw normalizeCodexError(err)
     }
 

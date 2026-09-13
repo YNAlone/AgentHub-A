@@ -25,7 +25,8 @@ import { assertPathWithinWorkspace, getEffectiveCwd } from '@/server/workspace-u
 import type { DeployStatusRecord, StreamEvent } from '@/shared/types'
 
 import { buildChildProcessEnv, createAdapterEvent } from './adapter-utils'
-import { claudeCodeSessions } from './session-store'
+import { missingSession, restoredPrompt } from './restored-prompt'
+import { adapterSessionKey, claudeCodeSessions } from './session-store'
 import type { AdapterInput, AgentPlatformAdapter } from './types'
 
 /**
@@ -418,7 +419,8 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
 
     // 同一 conversation 的多轮 query 共享 session（resume）—— 否则每轮都是新对话上下文，
     // agent 就不记得上一轮说了什么。
-    const previousSessionId = claudeCodeSessions.get(input.conversationId)
+    const sessionKey = adapterSessionKey(input.conversationId, input.agentId)
+    const previousSessionId = claudeCodeSessions.get(sessionKey)
 
     const options: Options = {
       cwd: getEffectiveCwd(workspace),
@@ -443,13 +445,14 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
         bridgePermission(toolName, toolInput, { workspace, approvalMode, input, signal }),
     }
 
+    let initialized = false
     try {
-      const q = query({ prompt: input.prompt, options })
+      const q = query({ prompt: restoredPrompt(input, !!previousSessionId), options })
       for await (const m of q) {
         // SDKSystemMessage init 携带 session_id —— 保存供下次 resume
         if (m.type === 'system') {
           const sid = (m as { session_id?: string }).session_id
-          if (sid) claudeCodeSessions.set(input.conversationId, sid)
+          if (sid) { initialized = true; claudeCodeSessions.set(sessionKey, sid) }
           continue
         }
 
@@ -596,6 +599,7 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
         }
 
         if (m.type === 'result') {
+          if (m.is_error) throw new Error('errors' in m ? m.errors.join('\n') : 'Claude SDK run failed')
           // 终止信号 —— 顺便采集 usage（success / error subtypes 都带 usage 字段）
           const resultMsg = m as unknown as {
             usage?: {
@@ -648,6 +652,13 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
     } catch (err) {
       if (err instanceof AbortError || signal.aborted) {
         // 主动中止：吞掉，run.end 状态由 AgentRunner 决定
+      } else if (previousSessionId && missingSession(err)) {
+        claudeCodeSessions.delete(sessionKey)
+        if (initialized) throw err
+        yield baseEvent({ type: 'part.start', messageId, partIndex: 0, part: { type: 'text', content: '原 SDK 记录不可用，正在从应用保存的历史恢复。' } })
+        yield baseEvent({ type: 'message.end', messageId })
+        yield* this.stream(input, signal)
+        return
       } else {
         throw err
       }
