@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events'
+import { sqlite } from '@/db/client'
+import { EventJournal } from './event-journal'
 
 import type { StreamEvent } from '@/shared/types'
 
@@ -12,16 +14,18 @@ import type { StreamEvent } from '@/shared/types'
  */
 class EventBus {
   private emitter = new EventEmitter()
+  readonly journal = new EventJournal(sqlite)
 
   constructor() {
     this.emitter.setMaxListeners(0)
   }
 
   publish(event: StreamEvent): void {
-    this.emitter.emit('event', event)
+    const id = this.journal.append(event)
+    this.emitter.emit('event', event, id)
   }
 
-  subscribe(listener: (event: StreamEvent) => void): () => void {
+  subscribe(listener: (event: StreamEvent, id: number) => void): () => void {
     this.emitter.on('event', listener)
     return () => {
       this.emitter.off('event', listener)
