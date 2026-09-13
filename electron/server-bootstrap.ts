@@ -1,6 +1,5 @@
 import { app } from 'electron'
 import { createServer } from 'node:net'
-import fs from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -12,18 +11,15 @@ import path from 'node:path'
  * - 探活直到 HEAD / 返回 < 500，最多 15s
  */
 export async function startEmbeddedServer(): Promise<number> {
-  const companion = readCompanionConfig()
-  const enabled = companion.companionMode !== 'off' && !!companion.mobileDeviceToken
-  const hostname = enabled ? '0.0.0.0' : '127.0.0.1'
-  const port = enabled ? companion.companionPort : await getFreePort('127.0.0.1')
+  // This release is local-only even when an older install enabled companion mode.
+  const hostname = '127.0.0.1'
+  const port = await getFreePort(hostname)
 
   process.env.PORT = String(port)
   process.env.HOSTNAME = hostname
   process.env.AGENTHUB_INTERNAL_BASE_URL = `http://127.0.0.1:${port}`
   process.env.NEXT_TELEMETRY_DISABLED = '1'
-  if (enabled && companion.mobileDeviceToken) {
-    process.env.AGENTHUB_MOBILE_TOKEN = companion.mobileDeviceToken
-  }
+  delete process.env.AGENTHUB_MOBILE_TOKEN
 
   // app.getAppPath() 在打包模式下指向 app.asar；但 Next standalone 的 server.js
   // 入口第一行就 process.chdir(__dirname)，chdir 是真实文件系统系统调用，跨不进 asar。
@@ -66,35 +62,6 @@ function getFreePort(host: string): Promise<number> {
       }
     })
   })
-}
-
-interface CompanionConfig {
-  companionMode?: 'off' | 'lan' | 'tailnet'
-  mobileDeviceToken?: string | null
-  companionPort?: number
-}
-
-function readCompanionConfig(): Required<CompanionConfig> {
-  const fallback: Required<CompanionConfig> = {
-    companionMode: 'off',
-    mobileDeviceToken: null,
-    companionPort: 60646,
-  }
-
-  const dataDir = process.env.AGENTHUB_DATA_DIR
-  if (!dataDir) return fallback
-
-  try {
-    const raw = fs.readFileSync(path.join(dataDir, 'companion.json'), 'utf8')
-    const parsed = JSON.parse(raw) as CompanionConfig
-    return {
-      companionMode: parsed.companionMode ?? fallback.companionMode,
-      mobileDeviceToken: parsed.mobileDeviceToken ?? null,
-      companionPort: parsed.companionPort ?? fallback.companionPort,
-    }
-  } catch {
-    return fallback
-  }
 }
 
 /** 探活：每 200ms 打一次 HEAD；server 起来或超时（默认 15s）才返回。 */

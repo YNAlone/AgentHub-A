@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { publicSettings, CONFIGURED_SECRET } from '@/server/public-credentials'
 
 import { getAppSettings, updateAppSettings } from '@/server/settings-service'
 
-/** GET /api/settings —— 返回全局设置（key 字段会原样返回；用户已自行选择填明文） */
+/** Browser responses contain credential configuration markers only. */
 export async function GET() {
   const settings = await getAppSettings()
-  return NextResponse.json({ settings })
+  return NextResponse.json({ settings: publicSettings(settings) })
 }
 
 const PatchBody = z.object({
@@ -16,7 +17,7 @@ const PatchBody = z.object({
   openaiApiKey: z.string().nullable().optional(),
   deepseekApiKey: z.string().nullable().optional(),
   arkApiKey: z.string().nullable().optional(),
-  companionMode: z.enum(['off', 'lan', 'tailnet']).optional(),
+  companionMode: z.literal('off').optional(),
   mobileDeviceToken: z.string().nullable().optional(),
   deploymentPublishEnabled: z.boolean().optional(),
   deploymentPublishDir: z.string().nullable().optional(),
@@ -33,6 +34,7 @@ export async function PATCH(req: NextRequest) {
       { status: 400 },
     )
   }
-  const settings = await updateAppSettings(parsed.data)
-  return NextResponse.json({ settings })
+  const patch = Object.fromEntries(Object.entries(parsed.data).filter(([key, value]) => value !== CONFIGURED_SECRET && !(key.endsWith('ApiKey') && typeof value === 'string' && !value.trim())))
+  const settings = await updateAppSettings({ ...patch, companionMode: 'off', mobileDeviceToken: null })
+  return NextResponse.json({ settings: publicSettings(settings) })
 }

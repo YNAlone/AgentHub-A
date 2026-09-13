@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { publicAgent } from '@/server/public-credentials'
 
 import { createCustomAgent, listAgentsOrdered } from '@/server/agent-service'
 
 export async function GET() {
   const agents = await listAgentsOrdered()
-  return NextResponse.json({ agents })
+  return NextResponse.json({ agents: agents.map(publicAgent) })
 }
 
 const CreateBody = z
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
       ...parsed.data,
       avatar: parsed.data.avatar ?? '',
     })
-    return NextResponse.json({ agent }, { status: 201 })
+    return NextResponse.json({ agent: publicAgent(agent) }, { status: 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: message }, { status: 400 })
