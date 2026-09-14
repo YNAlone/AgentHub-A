@@ -9,6 +9,38 @@
  */
 import type { AgentInsert } from './schema'
 
+type OrchestratorDefaults = Pick<AgentInsert, 'adapterName' | 'modelProvider' | 'modelId'>
+
+/** 将部署环境中的 Orchestrator 覆盖转换为与模型协议匹配的 adapter 配置。 */
+export function resolveOrchestratorDefaults(
+  env: Pick<NodeJS.ProcessEnv, 'ORCHESTRATOR_PROVIDER' | 'ORCHESTRATOR_MODEL_ID'> = process.env,
+): OrchestratorDefaults {
+  const provider = env.ORCHESTRATOR_PROVIDER?.trim() || 'deepseek'
+  const modelOverride = env.ORCHESTRATOR_MODEL_ID?.trim()
+
+  if (provider === 'anthropic') {
+    return {
+      adapterName: 'claude-code',
+      modelProvider: null,
+      modelId: modelOverride || 'claude-opus-4-7',
+    }
+  }
+
+  if (provider !== 'deepseek') {
+    throw new Error(
+      `Unsupported ORCHESTRATOR_PROVIDER "${provider}"; expected "deepseek" or "anthropic"`,
+    )
+  }
+
+  return {
+    adapterName: 'custom',
+    modelProvider: 'deepseek',
+    modelId: modelOverride || 'deepseek-v4-flash',
+  }
+}
+
+const orchestratorDefaults = resolveOrchestratorDefaults()
+
 export const UI_DESIGNER_ARTIFACT_PROMPT_HINT = `产物输出硬性要求：
 - 你只创建 document 类型的风格指南；不要创建其他产物类型，除非用户明确要求对应类型。
 - 调用 write_artifact 时必须一次性提交完整非空参数，禁止 write_artifact({})，禁止先空调用工具再补内容。
@@ -39,9 +71,7 @@ export const BUILTIN_AGENTS: AgentInsert[] = [
 3. 分派前根据群聊中 Agent 的能力选择负责人；不要把同一职责重复派给多个 Agent。
 4. 产物链路要清楚：PRD -> 风格指南 -> web_app -> review；缺少上游产物时允许跳过或让对应 Agent 补齐。
 5. 聚合结果时只总结关键结论、产物位置和下一步决策，不重复每个 Agent 的长篇过程。`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    ...orchestratorDefaults,
     toolNames: ['plan_tasks', 'ask_user', 'fs_list', 'fs_read', 'read_attachment', 'read_artifact'],
     isBuiltin: true,
     isOrchestrator: true,
