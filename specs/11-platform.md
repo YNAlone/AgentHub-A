@@ -1,5 +1,7 @@
 # Spec 11 — 平台抽象（Platform）
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > AgentHub 在本地运行，宿主可能是 macOS / Linux / Windows。本 spec 定义跨平台差异的处理契约：shell 选择、命令黑名单、路径校验、子进程清理。
 
 源文件：`src/server/platform.ts`（platform 检测与常量），`src/server/security.ts`（双平台黑名单），`src/server/tools/bash.ts`（shell 执行）。

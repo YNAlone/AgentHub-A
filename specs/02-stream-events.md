@@ -1,5 +1,7 @@
 # Spec 02 — StreamEvent 协议
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > 整个系统的「腰部」。L2 Adapter 产生事件 → L3 路由 → L4 SSE 推 → L5 store reducer 应用。**任何新 Adapter / UI 组件都必须围绕这套事件展开。**
 
 ---

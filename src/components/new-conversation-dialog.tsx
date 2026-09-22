@@ -24,9 +24,11 @@ type WorkspaceMode = 'sandbox' | 'local'
 export function NewConversationDialog({
   open,
   onOpenChange,
+  projectId,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  projectId?: string
 }) {
   const agents = useAgentList()
   const upsertConversation = useAppStore((s) => s.upsertConversation)
@@ -80,6 +82,7 @@ export function NewConversationDialog({
     setCreating(true)
     try {
       const conv = await createConversation({
+        projectId,
         mode,
         agentIds: Array.from(selected),
         boundPath: workspaceMode === 'local' ? boundPath.trim() : undefined,

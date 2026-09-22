@@ -14,7 +14,7 @@ import { useAppStore } from '@/stores/app-store'
  * 展示跨会话的 token 用量聚合：今日 / 本周 / 全部 + per-agent / per-model / per-conv top。
  * 数据来自 /api/usage/summary（每次 mount 拉一次；用户切回 tab 也重拉，保证 fresh）。
  */
-export function UsageDashboard() {
+export function UsageDashboard({ onOpenConversation }: { onOpenConversation?: () => void } = {}) {
   const [data, setData] = useState<UsageSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,7 +65,7 @@ export function UsageDashboard() {
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="space-y-4 p-3 text-xs">
+      <div className="workspace-usage space-y-4 p-3 text-xs">
         <header className="flex items-center justify-between border-b pb-2">
           <span className="flex items-center gap-1.5 font-medium">
             <BarChart3 className="size-3.5" />
@@ -82,11 +82,11 @@ export function UsageDashboard() {
         </header>
 
         {/* 时间桶 */}
-        <Section title="按时间">
+        <section aria-label="按时间的用量"><h2 className="mb-3 text-xs text-muted-foreground">按时间</h2><div className="workspace-metrics">
           <BucketRow label="今日" b={data.today} />
           <BucketRow label="本周" b={data.week} />
           <BucketRow label="全部" b={data.allTime} bold />
-        </Section>
+        </div></section>
 
         {/* 按 Model */}
         {data.byModel.length > 0 && (
@@ -125,7 +125,7 @@ export function UsageDashboard() {
               <button
                 key={c.id}
                 type="button"
-                onClick={() => setActiveConversation(c.id)}
+                onClick={() => { setActiveConversation(c.id); onOpenConversation?.() }}
                 className="flex w-full items-baseline justify-between gap-2 rounded px-1 py-0.5 text-left transition hover:bg-accent"
                 title={`点击跳转 · 更新时间 ${new Date(c.updatedAt).toLocaleString('zh-CN')}`}
               >
@@ -141,7 +141,7 @@ export function UsageDashboard() {
 
         {data.allTime.runs === 0 && (
           <div className="rounded-md border border-dashed bg-muted/30 px-3 py-6 text-center text-xs text-muted-foreground">
-            还没有用量数据 —— 跟 Agent 聊几句就有了
+            还没有用量记录。模型返回用量后，会在这里汇总；未上报用量的运行不会产生估算数据。
           </div>
         )}
       </div>
@@ -170,12 +170,12 @@ function BucketRow({
   bold?: boolean
 }) {
   return (
-    <div className={cn('flex items-baseline justify-between gap-2', bold && 'font-medium')}>
+    <div className={cn('workspace-metric', bold && 'font-medium')}>
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-mono">
         {formatTok(b.totalTokens)}
         <span className="ml-1 text-[10px] text-muted-foreground">
-          {b.runs > 0 ? `· ${b.runs} run` : ''}
+          {`tokens · ${b.runs} 次运行`}
         </span>
       </span>
     </div>
@@ -195,7 +195,7 @@ function BarRow({
 }) {
   const pct = max > 0 ? (value * 100) / max : 0
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-2 py-2">
       <div className="flex items-baseline justify-between gap-2">
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className="shrink-0 font-mono text-muted-foreground">
@@ -205,7 +205,7 @@ function BarRow({
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-[#3370FF]/70 transition-all"
+          className="h-full rounded-full bg-primary/70 transition-all"
           style={{ width: `${pct}%` }}
         />
       </div>

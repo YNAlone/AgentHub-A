@@ -1,5 +1,6 @@
 'use client'
 
+import type { StreamSnapshot } from '@/shared/stream-snapshot'
 import { enableMapSet } from 'immer'
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
@@ -165,6 +166,7 @@ interface AppState {
   }): void
   replaceLocalMessageId(tempId: string, realId: string): void
 
+  applySnapshot(snapshot: StreamSnapshot): void
   applyEvent(event: StreamEvent): void
 }
 
@@ -536,6 +538,38 @@ export const useAppStore = create<AppState>()(
           else arr[idx] = realId
         }
       }),
+
+    applySnapshot: (snapshot) => {
+      set((s) => {
+        // Replacing maps also removes entities deleted while this browser was disconnected.
+        s.conversations = Object.fromEntries(snapshot.conversations.map((c) => [c.id, c]))
+        s.agents = Object.fromEntries(snapshot.agents.map((a) => [a.id, a]))
+        s.messages = Object.fromEntries(snapshot.messages.map((m) => [m.id, m]))
+        s.artifacts = Object.fromEntries(snapshot.artifacts.map((a) => [a.id, a]))
+        s.messageIdsByConv = Object.fromEntries(snapshot.conversations.map((c) => [c.id, []]))
+        for (const message of snapshot.messages) (s.messageIdsByConv[message.conversationId] ??= []).push(message.id)
+        s.runsByConv = {}
+        for (const run of snapshot.runs) (s.runsByConv[run.conversationId] ??= {})[run.id] = run
+        s.pendingWritesByConv = snapshot.pendingWrites
+        s.pendingBashCommandsByConv = snapshot.pendingBashCommands
+        s.pendingQuestionsByConv = snapshot.pendingQuestions
+        s.dispatchesByRunId = {}
+        if (s.activeConversationId && !s.conversations[s.activeConversationId]) s.activeConversationId = null
+        if (s.previewArtifactId && !s.artifacts[s.previewArtifactId]) s.previewArtifactId = null
+      })
+      for (const event of snapshot.dispatchEvents ?? []) useAppStore.getState().applyEvent(event)
+      set((s) => {
+        for (const run of snapshot.runs) {
+          if (run.status !== 'interrupted') continue
+          const dispatch = s.dispatchesByRunId[run.id]
+          if (!dispatch) continue
+          for (const [id, status] of Object.entries(dispatch.taskStatus)) {
+            if (status === 'running' || status === 'pending') dispatch.taskStatus[id] = 'aborted'
+          }
+        }
+      })
+      for (const [id, plans] of Object.entries(snapshot.pendingPlans)) useAppStore.getState().setPendingDispatchPlansForConversation(id, plans)
+    },
 
     applyEvent: (event) =>
       set((s) => {

@@ -1,5 +1,7 @@
 # Adapters
 
+> 本机个人版当前契约见 [Spec 16](../../../specs/16-local-personal.md)。本期认证、项目/记忆、SDK/任务恢复、上下文预算和 SSE 恢复覆盖旧契约；远程伴随暂停。
+
 ## Purpose
 
 Defines the AgentPlatformAdapter contract and provider-specific boundaries. Detailed adapter notes live in `specs/05-adapter-interface.md`.

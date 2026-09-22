@@ -1,5 +1,7 @@
 'use client'
 
+import { CONFIGURED_SECRET, CLEAR_SECRET, credentialEdit } from '@/shared/credential-edit'
+
 import {
   AlertTriangle,
   Check,
@@ -58,8 +60,7 @@ interface SettingsForm {
 /**
  * 全局 API key / endpoint 设置面板。
  *
- * 4 个 provider key + Anthropic 自定义 base URL。明文展示，因为本地单用户场景安全
- * 收益小且会引入 keychain / safeStorage 复杂度（详见 spec / CLAUDE.md §5.4）。
+ * 已保存凭证只显示配置标记；替换或清空才提交变更。
  *
  * 优先级（adapter 侧）：agent.apiKey > app_settings > process.env。
  */
@@ -154,13 +155,13 @@ export function SettingsDialog({
     if (busy) return
     setBusy(true)
     try {
-      // 空串归一 null，明确「清空」语义
+      // Blank credentials preserve the current value; only the clear button deletes it.
       const patch: AppSettingsPatchBody = {
-        anthropicApiKey: form.anthropicApiKey.trim() || null,
+        anthropicApiKey: credentialEdit(form.anthropicApiKey),
         anthropicBaseUrl: form.anthropicBaseUrl.trim() || null,
-        openaiApiKey: form.openaiApiKey.trim() || null,
-        deepseekApiKey: form.deepseekApiKey.trim() || null,
-        arkApiKey: form.arkApiKey.trim() || null,
+        openaiApiKey: credentialEdit(form.openaiApiKey),
+        deepseekApiKey: credentialEdit(form.deepseekApiKey),
+        arkApiKey: credentialEdit(form.arkApiKey),
         companionMode: form.companionMode,
         mobileDeviceToken: form.mobileDeviceToken.trim() || null,
         deploymentPublishEnabled: form.deploymentPublishEnabled,
@@ -244,7 +245,7 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+      <DialogContent className="workspace-settings grid max-h-[calc(100vh-2rem)] sm:max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
         <DialogHeader>
           <DialogTitle>设置</DialogTitle>
           <DialogDescription className="sr-only">AgentHub 设置</DialogDescription>
@@ -262,7 +263,7 @@ export function SettingsDialog({
                   <KeyRound className="size-3.5" />
                   供应商 Key
                 </TabsTrigger>
-                <TabsTrigger value="mobile">
+                <TabsTrigger value="mobile" disabled title="本期仅支持本机访问">
                   <Smartphone className="size-3.5" />
                   移动端
                 </TabsTrigger>
@@ -627,7 +628,8 @@ function KeyField({
       <div className="relative">
         <Input
           type={type === 'text' || reveal ? 'text' : 'password'}
-          value={value}
+          value={value === CONFIGURED_SECRET || value === CLEAR_SECRET ? '' : value}
+          placeholder={value === CONFIGURED_SECRET ? '已配置；留空保留，输入新值替换' : value === CLEAR_SECRET ? '保存后清空' : undefined}
           onChange={(e) => onChange(e.target.value)}
           autoComplete="off"
           spellCheck={false}
@@ -644,12 +646,13 @@ function KeyField({
           </button>
         )}
       </div>
+      {type === 'password' && value && <button type="button" className="self-start text-xs text-muted-foreground underline" onClick={() => onChange(value === CLEAR_SECRET ? CONFIGURED_SECRET : CLEAR_SECRET)}>{value === CLEAR_SECRET ? '撤销清空' : '清空已保存的凭据'}</button>}
       {hint && <p className="text-[10px] text-muted-foreground/80">{hint}</p>}
     </div>
   )
 }
 
-/** 设置 button 入口，挂在 Sidebar header。 */
+/** Settings remain accessible from the persistent sidebar footer. */
 export function SettingsButton() {
   const [open, setOpen] = useState(false)
 

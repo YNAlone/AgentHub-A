@@ -63,7 +63,7 @@ export function AgentLibrary() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div data-surface="agent-library" className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-3 pt-3">
         <Button
           className="w-full justify-start gap-2"
@@ -76,7 +76,7 @@ export function AgentLibrary() {
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-1 p-2">
+        <div className="workspace-agent-grid">
           {agents.length === 0 ? (
             <div className="px-3 py-8 text-center text-xs text-muted-foreground">
               没有 Agent
@@ -85,7 +85,7 @@ export function AgentLibrary() {
             agents.map((a) => (
               <div
                 key={a.id}
-                className="group flex items-start gap-2 rounded-md border bg-card px-2 py-2 transition hover:border-foreground/20"
+                className="workspace-agent-card group flex items-start gap-2 rounded-md border bg-card px-2 py-2 transition hover:border-foreground/20"
               >
                 <AgentAvatar agent={a} size="md" />
                 <div className="min-w-0 flex-1">
@@ -110,7 +110,7 @@ export function AgentLibrary() {
                     {a.modelId ? ` · ${a.modelId}` : ''}
                   </div>
                 </div>
-                <div className="flex shrink-0 self-center gap-1 opacity-0 transition group-hover:opacity-100">
+                <div className="flex shrink-0 self-center gap-1 opacity-60 transition group-hover:opacity-100">
                   <button
                     type="button"
                     onClick={(e) => {

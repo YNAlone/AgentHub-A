@@ -1,5 +1,7 @@
 'use client'
 
+import { CONFIGURED_SECRET, CLEAR_SECRET, credentialEdit } from '@/shared/credential-edit'
+
 import { Cpu, MessageSquareText, SlidersHorizontal, Sparkles, User, Wrench } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
@@ -284,7 +286,7 @@ export function CreateAgentDialog({
           modelId: isSdkAgent ? modelId.trim() || null : modelId.trim(),
           toolNames: isSdkAgent ? [] : Array.from(toolNames),
           supportsVision,
-          apiKey: trimmedApiKey || null,
+          apiKey: credentialEdit(apiKey),
           apiBaseUrl: trimmedApiBaseUrl || null,
         }
         const updated = await updateAgent(agent.id, patch)
@@ -569,10 +571,10 @@ export function CreateAgentDialog({
                     <div className="flex gap-2">
                       <Input
                         type={showApiKey ? 'text' : 'password'}
-                        value={apiKey}
+                        value={apiKey === CONFIGURED_SECRET || apiKey === CLEAR_SECRET ? '' : apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
                         placeholder={
-                          adapterKind === 'claude-code' && apiBaseUrl.trim()
+                          apiKey === CONFIGURED_SECRET ? '已配置；留空保留' : apiKey === CLEAR_SECRET ? '保存后清空' : adapterKind === 'claude-code' && apiBaseUrl.trim()
                             ? '第三方网关的 token'
                             : adapterKind === 'codex' && apiBaseUrl.trim()
                               ? 'Codex/Responses endpoint token'
@@ -592,6 +594,7 @@ export function CreateAgentDialog({
                         {showApiKey ? '隐藏' : '显示'}
                       </Button>
                     </div>
+                    {agent && <button type="button" className="mt-1 text-xs underline" onClick={() => setApiKey(apiKey === CLEAR_SECRET ? CONFIGURED_SECRET : CLEAR_SECRET)}>{apiKey === CLEAR_SECRET ? '撤销清空' : '清空已保存的凭据'}</button>}
                     <div className="mt-1 text-[10px] text-muted-foreground">
                       {adapterKind === 'claude-code' && apiBaseUrl.trim() ? (
                         <>填写后作为 <code className="font-mono">ANTHROPIC_AUTH_TOKEN</code> 传给 SDK，路由到自定义 Base URL；留空则透传空 token（第三方网关可能拒绝）</>

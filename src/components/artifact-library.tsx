@@ -139,7 +139,7 @@ export function ArtifactLibrary({
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div data-surface="artifact-library" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {/* 搜索 */}
       <div className="shrink-0 px-3 pt-3 pb-2">
         <div className="relative">
@@ -164,8 +164,8 @@ export function ArtifactLibrary({
               <Loader2 className="mr-2 size-3 animate-spin" /> 加载中
             </div>
           ) : filteredGroups.length === 0 ? (
-            <div className="px-3 py-8 text-center text-xs text-muted-foreground">
-              {scopedItems.length === 0 || !query.trim() ? '还没有产物' : '没有匹配项'}
+            <div className="workspace-library-empty">
+              <Layers className="size-8" strokeWidth={1.2} /><h3>{scopedItems.length === 0 || !query.trim() ? '成果，从一次对话开始' : '没有匹配的产物'}</h3><p>{query.trim() ? '试试其他标题或类型关键词。' : 'Agent 生成的代码、文档与设计会自动出现在这里，版本也会一起保留。'}</p>
             </div>
           ) : (
             filteredGroups.map((group) => {
@@ -181,7 +181,7 @@ export function ArtifactLibrary({
               return (
                 <div
                   key={group.rootId}
-                  className="group min-w-0 overflow-hidden rounded-md px-2 py-2 transition hover:bg-accent"
+                  className="workspace-artifact-row group min-w-0 overflow-hidden rounded-md px-2 py-2 transition hover:bg-accent"
                 >
                   <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <button

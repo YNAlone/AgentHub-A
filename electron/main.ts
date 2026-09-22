@@ -1,4 +1,7 @@
 import { app, BrowserWindow, session, shell } from 'electron'
+import { createHmac } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
 import { setupDataDir } from './paths'
 import { startEmbeddedServer } from './server-bootstrap'
@@ -74,6 +77,13 @@ if (!gotLock) {
       }
     })
 
+    // Packaged desktop reads its own protected local bootstrap file, never an HTTP secret endpoint.
+    if (!isDev) {
+      const credentials = JSON.parse(readFileSync(path.join(app.getPath('userData'), 'local-auth.json'), 'utf8')) as { key: string }
+      const expiry = String(Date.now() + 86400000)
+      const signature = createHmac('sha256', credentials.key).update(expiry).digest('hex')
+      await session.defaultSession.cookies.set({ url, name: 'agenthub_session', value: `${expiry}.${signature}`, httpOnly: true, sameSite: 'strict', path: '/', expirationDate: Number(expiry) / 1000 })
+    }
     await win.loadURL(url)
   })
 

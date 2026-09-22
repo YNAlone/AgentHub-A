@@ -142,7 +142,7 @@ export function MessageList({ conversationId }: { conversationId: string }) {
 
   return (
     <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
-      <div className="space-y-4 p-4">
+      <div className="workspace-messages space-y-6 p-4">
         {messages.map((m) => (
           <MessageItem key={m.id} message={m} />
         ))}

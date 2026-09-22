@@ -1,3 +1,5 @@
+import { projects, recallMemoryBlock } from './personal-runtime'
+import { buildAutomaticHistory } from './automatic-context'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 
@@ -24,10 +26,8 @@ import type { AdapterAttachment, AdapterInput } from './adapters/types'
 import { getAttachmentAbsolutePath } from './attachment-service'
 import {
   getLatestContextSummary,
-  prefixPromptWithContextSummary,
   renderConversationSummaryBlock,
 } from './context-compaction-service'
-import { buildHistoryFor } from './conversation-context'
 import {
   clearFileWrites,
   detectWaveConflicts,
@@ -1970,6 +1970,9 @@ async function buildAdapterInput(
   const effectiveCwd = getEffectiveCwd(workspace)
   const baseSystemPrompt = systemPromptOverride ?? agent.systemPrompt
   let systemPromptWithWorkspace = buildWorkspaceContextBlock(workspace) + '\n\n' + baseSystemPrompt
+  const memoryBlock = recallMemoryBlock(args.conversationId, prompt)
+  const projectId = projects.memberships()[args.conversationId] ?? null
+  systemPromptWithWorkspace += memoryBlock
   const toolGuidance = buildAgentHubToolGuidance(agent, toolNames, workspace)
   if (toolGuidance) systemPromptWithWorkspace += '\n\n' + toolGuidance
 
@@ -1987,14 +1990,12 @@ async function buildAdapterInput(
     }
   }
 
-  // 跨 run 对话历史（仅 CustomAgentAdapter 消费；ClaudeCode / Codex 走 SDK session resume）。
-  // 按模型 contextWindow 算出 historyBudget = totalContext - outputReserve - (system+currentUser 估算) - 安全 margin。
-  // 失败回退到空数组，让 agent 退化到「无历史」模式而不是整个 run 崩。详见 specs/13-conversation-context.md。
+  // SDK 新建或失效重建时也需要公开历史；预算失败必须保留原文并显式报错。
   let history: ChatCompletionMessageParam[] = []
   // Orchestrator 分派的子 agent（args.overridePrompt 已带 spec 06 的隔离上下文：
   // recent_conversation + pinned + artifacts + task）跳过历史注入，不再重复塞一份——
   // 既省 token，也守住 spec 06「子 agent 不看完整群聊历史」的隔离原则。普通会话轮次才注入。
-  if (agent.adapterName === 'custom' && !args.overridePrompt) {
+  if (!args.overridePrompt) {
     // 群聊（>1 agent）：history 里别 agent 的发言会被序列化成 `[名字] ...` 的 user 消息
     // （见 conversation-context.ts:renderOtherAgentAsUser）。在 system prompt 末尾追加一段说明，
     // 让当前 agent 正确解读这套前缀语义、不把别人的话当成自己的输出。先 append 再算预算，
@@ -2009,30 +2010,21 @@ async function buildAdapterInput(
     const limits = getModelLimits(agent.modelProvider, agent.modelId)
     const promptEstimate =
       estimateTokens(systemPromptWithWorkspace) + estimateTokens(prompt) + 512 /* margin */
+    if (promptEstimate + limits.outputReserve > limits.contextWindow) {
+      throw new Error('当前输入、系统约束和记忆已超过模型预算；请缩短输入或调整模型，原始历史保持不变。')
+    }
     const historyBudget = Math.max(0, limits.contextWindow - limits.outputReserve - promptEstimate)
-    history = await buildHistoryFor(agent.id, args.conversationId, {
-      excludeMessageId: args.triggerMessageId,
-      tokenBudget: historyBudget,
-    }).catch((err) => {
-      console.warn('[agent-runner] buildHistoryFor failed; continuing without history', err)
-      return []
-    })
+    history = await buildAutomaticHistory(agent.id, args.conversationId, args.triggerMessageId, historyBudget, activeRuns.get(runId)?.signal)
   }
 
-  let effectivePrompt = prompt
-  if ((agent.adapterName === 'claude-code' || agent.adapterName === 'codex') && !args.overridePrompt) {
-    effectivePrompt = await prefixPromptWithContextSummary(args.conversationId, prompt).catch((err) => {
-      console.warn('[agent-runner] prefixPromptWithContextSummary failed; continuing without summary', err)
-      return prompt
-    })
-  }
 
   return {
     agentId: agent.id,
     conversationId: args.conversationId,
     runId,
-    prompt: effectivePrompt,
+    prompt,
     workspacePath: effectiveCwd,
+    contextState: { memoryBlock, projectId, summaryId: (await getLatestContextSummary(args.conversationId))?.id ?? null },
     systemPrompt: systemPromptWithWorkspace,
     apiKey: effectiveApiKey,
     apiBaseUrl: effectiveApiBaseUrl,

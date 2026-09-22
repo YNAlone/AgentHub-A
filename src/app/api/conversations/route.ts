@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { createConversation, listConversations } from '@/server/conversation-service'
 
 const CreateBody = z.object({
+  projectId: z.string().min(1).optional(),
   title: z.string().optional(),
   mode: z.enum(['single', 'group']),
   agentIds: z.array(z.string()).min(1),

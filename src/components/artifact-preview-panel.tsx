@@ -121,7 +121,7 @@ export function ArtifactPreviewPanel() {
   const hasMultiple = versionCount > 1
 
   return (
-    <aside className="flex w-1/2 min-w-[420px] shrink-0 flex-col border-l bg-card max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:min-w-0">
+    <aside className="workspace-tool-panel flex w-1/2 min-w-[420px] shrink-0 flex-col border-l bg-card max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:min-w-0">
       <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <TypeIcon type={artifact.type} />

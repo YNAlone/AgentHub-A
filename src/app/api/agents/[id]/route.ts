@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { publicAgent, CONFIGURED_SECRET } from '@/server/public-credentials'
 
 import { deleteCustomAgent, updateCustomAgent } from '@/server/agent-service'
 
@@ -35,8 +36,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   }
 
   try {
+    // A redacted existing credential is not a replacement value.
+    if (parsed.data.apiKey === CONFIGURED_SECRET || parsed.data.apiKey?.trim() === '') delete parsed.data.apiKey
     const agent = await updateCustomAgent(id, parsed.data)
-    return NextResponse.json({ agent })
+    return NextResponse.json({ agent: publicAgent(agent) })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: message }, { status: 400 })

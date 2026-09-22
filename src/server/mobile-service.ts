@@ -46,7 +46,7 @@ export interface MobileRun {
   id: string
   conversationId: string
   agentId: string
-  status: 'queued' | 'running' | 'complete' | 'failed' | 'aborted'
+  status: 'queued' | 'running' | 'complete' | 'failed' | 'aborted' | 'interrupted'
   startedAt: number
 }
 

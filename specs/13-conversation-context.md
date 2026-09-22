@@ -1,5 +1,7 @@
 # Spec 13 — 对话上下文（Conversation Context）
 
+> 2026-09-13 本机个人版：访问认证、凭据响应、项目/记忆实体、SDK/任务恢复、预算和 SSE 恢复的当前契约见 [Spec 16](16-local-personal.md)，这些范围以内以 Spec 16 替代本文旧行为；远程伴随本期关闭。
+
 > 多轮对话里 agent 怎么「记住」之前发生的事。这个 spec 定义从 DB messages 表到 LLM 的 `messages` 数组的序列化契约。
 
 源文件：`src/server/conversation-context.ts`（`buildHistoryFor`），`src/server/adapters/types.ts`（`AdapterInput.history` 字段），`src/server/adapters/custom-agent-adapter.ts`（消费侧）。

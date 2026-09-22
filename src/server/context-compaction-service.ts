@@ -1,5 +1,6 @@
+import { getPersonalSettings, recordAuxiliaryUsage } from './personal-settings'
 import Anthropic from '@anthropic-ai/sdk'
-import { and, desc, eq, gt, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import OpenAI from 'openai'
 
 import { db, schema } from '@/db/client'
@@ -21,7 +22,6 @@ import { estimateTokens } from '@/shared/model-registry'
 import type { DeployStatusRecord, MessagePart, ModelProvider } from '@/shared/types'
 
 const RECENT_MESSAGES_TO_KEEP = 6
-const MAX_RENDERED_MESSAGE_CHARS = 4000
 const MAX_COMPACTION_INPUT_CHARS = 60000
 const SUMMARY_MAX_TOKENS = 1600
 
@@ -37,7 +37,7 @@ export interface CompactConversationResult {
 interface SummaryModelChoice {
   provider: ModelProvider | null
   modelId: string | null
-  summarize(prompt: string, signal?: AbortSignal): Promise<string>
+  summarize(prompt: string, signal?: AbortSignal, systemPrompt?: string): Promise<string>
 }
 
 interface RenderedCompactionInput {
@@ -50,7 +50,7 @@ export async function getLatestContextSummary(
 ): Promise<ContextSummaryRow | null> {
   const row = await db.query.contextSummaries.findFirst({
     where: eq(schema.contextSummaries.conversationId, conversationId),
-    orderBy: [desc(schema.contextSummaries.createdAt)],
+    orderBy: [desc(sql`rowid`)],
   })
   return row ?? null
 }
@@ -76,7 +76,7 @@ export function renderConversationSummaryBlock(summary: ContextSummaryRow): stri
   ].join('\n')
 }
 
-export async function compactConversation(
+async function compactConversationUnlocked(
   conversationId: string,
   signal?: AbortSignal,
 ): Promise<CompactConversationResult> {
@@ -89,7 +89,7 @@ export async function compactConversation(
   const messages = await loadCompactableMessages(conversationId, latest)
   const pinnedIds = new Set(conv.pinnedMessageIds ?? [])
   const compactable = messages.filter((m) => !pinnedIds.has(m.id) && m.role !== 'system')
-  const keepRecent = compactable.length > RECENT_MESSAGES_TO_KEEP ? RECENT_MESSAGES_TO_KEEP : 0
+  const keepRecent = RECENT_MESSAGES_TO_KEEP
   const source = compactable.slice(
     0,
     Math.max(0, compactable.length - keepRecent),
@@ -108,6 +108,7 @@ export async function compactConversation(
   const prompt = buildCompactionPrompt(latest, rendered.text)
   const choice = await chooseSummaryModel(conv.agentIds)
   const summaryText = normalizeSummary(await choice.summarize(prompt, signal))
+  signal?.throwIfAborted()
   const now = Date.now()
 
   const summaryInsert: ContextSummaryInsert = {
@@ -122,7 +123,6 @@ export async function compactConversation(
     modelId: choice.modelId,
     createdAt: now,
   }
-  await db.insert(schema.contextSummaries).values(summaryInsert)
 
   const systemMessageInsert: MessageInsert = {
     id: newMessageId(),
@@ -142,14 +142,20 @@ export async function compactConversation(
     usage: null,
     createdAt: now,
   }
-  await db.insert(schema.messages).values(systemMessageInsert)
-  await db
-    .update(schema.conversations)
-    .set({ updatedAt: now })
-    .where(eq(schema.conversations.id, conversationId))
-
-  clearClaudeCodeSession(conversationId)
-  clearCodexSession(conversationId)
+  // Coverage, its visible notice and session invalidation either all commit or all roll back.
+  db.transaction((tx) => {
+    const currentSummary = tx.select().from(schema.contextSummaries).where(eq(schema.contextSummaries.conversationId, conversationId)).orderBy(desc(sql`rowid`)).get()
+    if ((currentSummary?.id ?? null) !== (latest?.id ?? null)) throw new Error('摘要来源版本已改变，请重试。')
+    for (const sourceMessage of rendered.includedMessages) {
+      const current = tx.select().from(schema.messages).where(eq(schema.messages.id, sourceMessage.id)).get()
+      if (!current || current.status !== 'complete' || JSON.stringify(current.parts) !== JSON.stringify(sourceMessage.parts)) throw new Error('摘要来源已改变，结果未保存。')
+    }
+    tx.insert(schema.contextSummaries).values(summaryInsert).run()
+    tx.insert(schema.messages).values(systemMessageInsert).run()
+    tx.update(schema.conversations).set({ updatedAt: now }).where(eq(schema.conversations.id, conversationId)).run()
+    clearClaudeCodeSession(conversationId)
+    clearCodexSession(conversationId)
+  })
 
   return {
     summary: summaryInsert as ContextSummaryRow,
@@ -165,7 +171,7 @@ async function loadCompactableMessages(
     ? and(
         eq(schema.messages.conversationId, conversationId),
         eq(schema.messages.status, 'complete'),
-        gt(schema.messages.createdAt, latest.coveredUntilCreatedAt),
+        sql`messages.rowid > (SELECT rowid FROM messages WHERE id = ${latest.coveredUntilMessageId})`,
       )
     : and(
         eq(schema.messages.conversationId, conversationId),
@@ -175,7 +181,7 @@ async function loadCompactableMessages(
     .select()
     .from(schema.messages)
     .where(where)
-    .orderBy(schema.messages.createdAt)
+    .orderBy(sql`messages.rowid`)
 }
 
 async function renderMessagesForCompaction(
@@ -204,7 +210,7 @@ async function renderMessagesForCompaction(
   for (const m of messages) {
     const rendered = renderMessageForCompaction(m, agentNameById, artifactTitles)
     if (!rendered) continue
-    const next = limitChars(rendered, MAX_RENDERED_MESSAGE_CHARS)
+    const next = rendered // Never advance coverage past text omitted from the model input.
     if (totalChars + next.length > MAX_COMPACTION_INPUT_CHARS) break
     chunks.push(next)
     includedMessages.push(m)
@@ -275,6 +281,12 @@ function renderPublicParts(
       case 'file_attachment':
         out.push(`[file attachment: ${part.fileName}, id=${part.attachmentId}]`)
         break
+      case 'tool_use':
+        out.push(`[历史工具调用 ${part.callId}: ${part.toolName} ${JSON.stringify(part.args)}]`)
+        break
+      case 'tool_result':
+        out.push(`[历史工具结果 ${part.callId}, error=${!!part.isError}: ${JSON.stringify(part.result)}]`)
+        break
       default:
         break
     }
@@ -329,6 +341,8 @@ function buildCompactionPrompt(latest: ContextSummaryRow | null, renderedMessage
 }
 
 async function chooseSummaryModel(agentIds: string[]): Promise<SummaryModelChoice> {
+  const selected = getPersonalSettings().auxiliaryAgentId
+  if (selected) agentIds = [selected]
   const agents =
     agentIds.length > 0
       ? await db.query.agents.findMany({ where: inArray(schema.agents.id, agentIds) })
@@ -339,6 +353,7 @@ async function chooseSummaryModel(agentIds: string[]): Promise<SummaryModelChoic
     if (choice) return choice
   }
 
+  if (selected) throw new Error('所选辅助 Agent 没有可用的模型凭证；请调整配置后重试。')
   const anthropicKey = await getEffectiveApiKey('anthropic')
   if (anthropicKey) {
     const claudeAgent = agents.find((a) => a.adapterName === 'claude-code')
@@ -349,14 +364,27 @@ async function chooseSummaryModel(agentIds: string[]): Promise<SummaryModelChoic
     )
   }
 
-  return {
-    provider: null,
-    modelId: null,
-    summarize: async (prompt) => heuristicSummary(prompt),
-  }
+  throw new Error('没有可用的摘要模型；保留全部历史，请配置摘要模型后重试。')
 }
 
 async function choiceFromCustomAgent(agent: AgentRow): Promise<SummaryModelChoice | null> {
+  if (agent.adapterName === 'claude-code') {
+    const key = agent.apiKey ?? await getEffectiveApiKey('anthropic')
+    return key ? buildAnthropicChoice(key, agent.apiBaseUrl ?? await getEffectiveAnthropicBaseUrl(), agent.modelId ?? DEFAULT_CLAUDE_MODEL) : null
+  }
+  if (agent.adapterName === 'codex') {
+    const key = agent.apiKey ?? await getEffectiveApiKey('openai')
+    if (!key) return null
+    const model = agent.modelId ?? 'gpt-5-codex'
+    const client = new OpenAI({ apiKey: key, baseURL: agent.apiBaseUrl ?? undefined, maxRetries: 1 })
+    return { provider: 'openai', modelId: model, summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
+      // Codex-compatible endpoints use Responses rather than Chat Completions.
+      const result = await client.responses.create({ model, instructions: systemPrompt, input: prompt, max_output_tokens: SUMMARY_MAX_TOKENS }, { signal })
+      recordAuxiliaryUsage(model, result.usage?.input_tokens ?? 0, result.usage?.output_tokens ?? 0)
+      if (result.status !== 'completed') throw new Error('辅助模型未完成，原始历史保持不变。')
+      return result.output_text
+    } }
+  }
   if (agent.adapterName !== 'custom' || !agent.modelProvider || !agent.modelId) return null
   if (agent.modelProvider === 'anthropic') {
     const key = agent.apiKey ?? (await getEffectiveApiKey('anthropic'))
@@ -407,18 +435,21 @@ function buildOpenAICompatibleChoice(
   return {
     provider,
     modelId,
-    summarize: async (prompt, signal) => {
+    summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
       const result = await client.chat.completions.create(
         {
           model: modelId,
           temperature: 0.2,
+          max_tokens: SUMMARY_MAX_TOKENS,
           messages: [
-            { role: 'system', content: COMPACTION_SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user', content: prompt },
           ],
         },
         { signal },
       )
+      recordAuxiliaryUsage(modelId, result.usage?.prompt_tokens ?? 0, result.usage?.completion_tokens ?? 0)
+      if (result.choices[0]?.finish_reason === 'length') throw new Error('辅助模型输出超过限制，未保存不完整结果。')
       return result.choices[0]?.message.content ?? ''
     },
   }
@@ -437,17 +468,19 @@ function buildAnthropicChoice(
   return {
     provider: 'anthropic',
     modelId,
-    summarize: async (prompt, signal) => {
+    summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
       const result = await client.messages.create(
         {
           model: modelId,
           max_tokens: SUMMARY_MAX_TOKENS,
           temperature: 0.2,
-          system: COMPACTION_SYSTEM_PROMPT,
+          system: systemPrompt,
           messages: [{ role: 'user', content: prompt }],
         },
         { signal },
       )
+      recordAuxiliaryUsage(modelId, result.usage.input_tokens, result.usage.output_tokens)
+      if (result.stop_reason === 'max_tokens') throw new Error('辅助模型输出超过限制，未保存不完整结果。')
       return result.content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
@@ -456,25 +489,10 @@ function buildAnthropicChoice(
   }
 }
 
-function heuristicSummary(prompt: string): string {
-  return [
-    '本摘要由本地兜底规则生成，因为当前没有可用的摘要模型 API key。',
-    '',
-    '已压缩的早期上下文如下。后续模型应把它视为旧对话摘要，并优先结合最新未压缩消息判断用户意图。',
-    '',
-    limitChars(prompt, 10000),
-  ].join('\n')
-}
-
 function normalizeSummary(summary: string): string {
   const trimmed = summary.trim()
   if (!trimmed) throw new Error('Compaction model returned an empty summary')
   return trimmed
-}
-
-function limitChars(value: string, limit: number): string {
-  if (value.length <= limit) return value
-  return value.slice(0, limit) + '\n[truncated]'
 }
 
 function escapeAttr(value: string): string {
@@ -492,3 +510,20 @@ const COMPACTION_SYSTEM_PROMPT = [
   '- 不要虚构没有出现过的事实。',
   '- 用简洁分节或项目符号输出，适合直接放进下一轮 LLM 上下文。',
 ].join('\n')
+
+const compactions = new Map<string, Promise<CompactConversationResult>>()
+
+/** Serialize compaction per conversation so coverage never forks under parallel agents. */
+export function compactConversation(conversationId: string, signal?: AbortSignal): Promise<CompactConversationResult> {
+  const pending = compactions.get(conversationId)
+  if (pending) return pending
+  const task = compactConversationUnlocked(conversationId, signal).finally(() => compactions.delete(conversationId))
+  compactions.set(conversationId, task)
+  return task
+}
+
+/** Both background extraction and compaction share configured credentials and usage accounting. */
+export async function generateAuxiliaryText(agentIds: string[], prompt: string, systemPrompt: string, signal?: AbortSignal): Promise<string> {
+  const choice = await chooseSummaryModel(agentIds)
+  return choice.summarize(prompt, signal, systemPrompt)
+}

@@ -1,3 +1,4 @@
+import { projects } from './personal-runtime'
 import { accessSync, constants, mkdirSync, statSync } from 'node:fs'
 import { rm as fsRm } from 'node:fs/promises'
 import path from 'node:path'
@@ -55,6 +56,7 @@ async function rmDirWithRetry(target: string): Promise<void> {
 
 // ─── 创建会话 ────────────────────────────────────────────
 export interface CreateConversationArgs {
+  projectId?: string
   title?: string
   mode: 'single' | 'group'
   agentIds: string[]
@@ -63,6 +65,7 @@ export interface CreateConversationArgs {
 }
 
 export async function createConversation(args: CreateConversationArgs): Promise<ConversationWithMeta> {
+  if (args.projectId && !projects.list().some((project) => project.id === args.projectId)) throw new Error('项目不存在')
   if (args.agentIds.length === 0) {
     throw new Error('At least one agent is required')
   }
@@ -151,6 +154,7 @@ export async function createConversation(args: CreateConversationArgs): Promise<
         createdAt: now,
       })
       .run()
+    if (args.projectId) projects.assign(conversationId, args.projectId)
   })
 
   return {
@@ -332,6 +336,8 @@ export async function clearConversationHistory(
 
   const now = Date.now()
   db.transaction((tx) => {
+    // Message rowids may be reused after clearing history; restart extraction from the retained source set.
+    tx.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId)).run()
     tx.delete(schema.contextSummaries)
       .where(eq(schema.contextSummaries.conversationId, conversationId))
       .run()
@@ -801,6 +807,7 @@ export async function withdrawLatestUserMessage(
     ),
   })
   const messageIds = messagesToDelete.map((m) => m.id)
+  await db.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId))
 
   // 从 parts 提取 artifact_ref 拿到要删的 artifact id
   const artifactIds = new Set<string>()
@@ -922,6 +929,8 @@ export async function regenerateLatestResponse(
   const runIds = runsToDelete.map((r) => r.id)
 
   db.transaction((tx) => {
+    // Regeneration may reuse deleted message rowids; re-extract from retained sources.
+    tx.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId)).run()
     if (messageIds.length > 0) {
       tx.delete(schema.messages).where(inArray(schema.messages.id, messageIds)).run()
     }

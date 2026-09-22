@@ -2,6 +2,7 @@
 
 import { CornerDownLeft, Loader2, Search, SearchX, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useSearchStore } from '@/stores/search-store'
@@ -25,7 +26,13 @@ export function GlobalSearch() {
   const hits = useSearchStore((s) => s.hits)
   const loading = useSearchStore((s) => s.loading)
   const error = useSearchStore((s) => s.error)
-  const jumpToHit = useSearchStore((s) => s.jumpToHit)
+  const storeJumpToHit = useSearchStore((s) => s.jumpToHit)
+  const router = useRouter()
+  const pathname = usePathname()
+  const jumpToHit = (hit: Parameters<typeof storeJumpToHit>[0]) => {
+    storeJumpToHit(hit)
+    if (pathname !== '/') router.push('/')
+  }
 
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -73,7 +80,7 @@ export function GlobalSearch() {
     <Dialog open={isOpen} onOpenChange={(o) => { if (!o) closeSearch() }}>
       <DialogContent
         showCloseButton={false}
-        className="top-[12%] max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-2xl"
+        className="workspace-search-dialog top-[12%] sm:max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-2xl"
       >
         <DialogTitle className="sr-only">搜索消息</DialogTitle>
 

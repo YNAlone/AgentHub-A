@@ -6,6 +6,8 @@ import { CodexAdapter } from './codex-adapter'
 import { CustomAgentAdapter } from './custom-agent-adapter'
 import { MockAdapter } from './mock-adapter'
 import type { AgentPlatformAdapter } from './types'
+import { acquireSession } from './session-lock'
+import { prepareSession } from './session-store'
 
 /**
  * AgentRegistry — 根据 Agent.adapterName 路由到对应实现。
@@ -16,7 +18,16 @@ class AgentRegistry {
   private adapters = new Map<AdapterName, AgentPlatformAdapter>()
 
   register(adapter: AgentPlatformAdapter): void {
-    this.adapters.set(adapter.name, adapter)
+    this.adapters.set(adapter.name, {
+      name: adapter.name,
+      async *stream(input, signal) {
+        const release = await acquireSession(`${adapter.name}:${input.conversationId}:${input.agentId}`, signal)
+        try {
+          prepareSession(adapter.name, input)
+          yield* adapter.stream(input, signal)
+        } finally { release() }
+      },
+    })
   }
 
   getAdapter(agent: AgentRow): AgentPlatformAdapter {
