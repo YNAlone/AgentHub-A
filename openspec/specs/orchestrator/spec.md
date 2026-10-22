@@ -6,6 +6,17 @@ Defines the special agent workflow for planning, dispatching, and aggregating mu
 
 ## Requirements
 
+### Requirement: Pending plans SHALL support validated editing
+Users MAY edit tasks, assignees, dependencies, and acceptance criteria before approval. The server MUST compile and validate edits before replacing the pending plan.
+
+#### Scenario: An edited plan is valid
+- **WHEN** an update passes plan validation
+- **THEN** the server replaces the pending plan and publishes `dispatch.plan.updated` without approving or starting it.
+
+#### Scenario: An edited plan is invalid
+- **WHEN** an update fails plan validation
+- **THEN** the original pending plan remains unchanged and the update returns an error.
+
 ### Requirement: Orchestrator SHALL be a normal Agent
 
 The orchestrator MUST run through AgentRunner and an adapter like any other agent; it SHALL not have a separate service path.

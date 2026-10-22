@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   // Electron 打包用：生成 .next/standalone 自包含 server（详见 Spec 12 §2 / §6）
   output: 'standalone',
 
+  // dev 模式下用公网 IP / 机器名访问时，Next 默认拦截 /_next/* 开发资源（HMR、client chunk），
+  // 页面只剩 SSR 壳、点击无响应；这里显式放行本机公网 IP（只写 hostname，不带协议/端口）
+  allowedDevOrigins: ['111.231.5.52'],
+
   // 不让 webpack bundle native / SDK 依赖；运行时走 require/import，保留 native binding 与子进程能力
   serverExternalPackages: [
     'better-sqlite3',

@@ -107,4 +107,57 @@ describe('pendingDispatchPlans', () => {
     expect(resolved).toEqual({ kind: 'revise', feedback: 't2 依赖 t1' })
     expect(pendingDispatchPlans.get(pending.id)).toBeUndefined()
   })
+
+  it('updates the pending plan and approve executes the edited version', () => {
+    const pending = pendingDispatchPlans.register({
+      conversationId: 'conv_plan_review_update',
+      agentId: 'ag_orchestrator',
+      runId: 'run_plan_review_update',
+      plan: [{ id: 't1', agentId: 'ag_pm', task: 'Write PRD' }],
+      validator: validate,
+    })
+    let resolved: PlanReviewOutcome | undefined
+    pendingDispatchPlans.attachResolver(pending.id, (outcome) => {
+      resolved = outcome
+    })
+
+    const result = pendingDispatchPlans.update(pending.id, [
+      { id: 't1', agentId: 'ag_frontend', task: 'Build UI', dependsOn: [] },
+      { id: 't2', agentId: 'ag_pm', task: 'Write PRD' },
+    ])
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.pendingPlan.plan.map((t) => t.id)).toEqual(['t1', 't2'])
+    }
+    // 编辑后计划仍处于 pending，未触发 resolver
+    expect(resolved).toBeUndefined()
+    expect(pendingDispatchPlans.get(pending.id)?.plan[0].agentId).toBe('ag_frontend')
+
+    expect(pendingDispatchPlans.approve(pending.id)).toEqual({ ok: true })
+    expect(resolved?.kind).toBe('approve')
+    if (resolved?.kind === 'approve') {
+      expect(resolved.plan[0].agentId).toBe('ag_frontend')
+    }
+    expect(pendingDispatchPlans.get(pending.id)).toBeUndefined()
+  })
+
+  it('keeps the original plan when an update fails validation', () => {
+    const pending = pendingDispatchPlans.register({
+      conversationId: 'conv_plan_review_update_invalid',
+      agentId: 'ag_orchestrator',
+      runId: 'run_plan_review_update_invalid',
+      plan: [{ id: 't1', agentId: 'ag_pm', task: 'Write PRD' }],
+      validator: validate,
+    })
+
+    const result = pendingDispatchPlans.update(pending.id, [
+      { id: 't1', agentId: 'ag_pm', task: 'Write PRD' },
+      { id: 't2', agentId: 'ag_frontend', task: 'Build UI', dependsOn: ['t_missing'] },
+    ])
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('t_missing')
+    expect(pendingDispatchPlans.get(pending.id)?.plan).toHaveLength(1)
+  })
 })

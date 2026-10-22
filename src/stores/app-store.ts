@@ -27,6 +27,7 @@ export interface DispatchState {
   childRunIds: Record<string, string>              // taskId → childRunId
   reviewStatus?: 'pending' | 'approved' | 'rejected'
   pendingPlanId?: string
+  orchestratorAgentId?: string                     // 计划归属的 Orchestrator agent（编辑时禁止派给自己）
 }
 
 interface AppState {
@@ -168,6 +169,8 @@ interface AppState {
 
   applySnapshot(snapshot: StreamSnapshot): void
   applyEvent(event: StreamEvent): void
+  /** 编辑待确认计划后的乐观更新（SSE dispatch.plan.updated 稍后会以相同数据再覆盖一次）。 */
+  updatePendingPlan(runId: string, pendingPlanId: string, plan: DispatchPlanItem[]): void
 }
 
 export const useAppStore = create<AppState>()(
@@ -781,7 +784,18 @@ export const useAppStore = create<AppState>()(
               childRunIds: existing?.childRunIds ?? {},
               reviewStatus: 'pending',
               pendingPlanId: pending.id,
+              orchestratorAgentId: pending.agentId,
             }
+            return
+          }
+
+          case 'dispatch.plan.updated': {
+            // 用户在审批卡上直接编辑了计划：替换 plan 内容；已有任务的状态保留，新增任务置 pending。
+            const updated = event.pendingPlan
+            const dispatch = s.dispatchesByRunId[updated.runId]
+            if (!dispatch || dispatch.pendingPlanId !== updated.id) return
+            applyDispatchPlanUpdate(dispatch, updated.plan)
+            dispatch.orchestratorAgentId = updated.agentId
             return
           }
 
@@ -890,8 +904,23 @@ export const useAppStore = create<AppState>()(
             return
         }
       }),
+
+    updatePendingPlan: (runId, pendingPlanId, plan) =>
+      set((s) => {
+        const dispatch = s.dispatchesByRunId[runId]
+        if (!dispatch || dispatch.pendingPlanId !== pendingPlanId) return
+        applyDispatchPlanUpdate(dispatch, plan)
+      }),
   })),
 )
+
+/** dispatch.plan.updated 与乐观更新共用：替换计划内容，已有任务状态保留，新增任务置 pending。 */
+function applyDispatchPlanUpdate(dispatch: DispatchState, plan: DispatchPlanItem[]): void {
+  const status: DispatchState['taskStatus'] = {}
+  for (const t of plan) status[t.id] = dispatch.taskStatus[t.id] ?? 'pending'
+  dispatch.plan = plan
+  dispatch.taskStatus = status
+}
 
 // ─── 派生 hooks ──────────────────────────────────────
 // 用 useShallow 防止派生数组每次新引用导致无限渲染（Zustand 5 标准做法）。

@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronRight, Folder, HardDrive, Home, Loader2 } from 'lucide-react'
+import { Check, ChevronRight, Folder, FolderPlus, HardDrive, Home, Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -12,8 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { listDirectory } from '@/lib/api'
+import { createDirectory, listDirectory } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface DirEntry {
@@ -45,6 +46,9 @@ export function DirPickerDialog({
   const [entries, setEntries] = useState<DirEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createName, setCreateName] = useState('')
+  const [creatingBusy, setCreatingBusy] = useState(false)
 
   const navigate = useCallback(async (target?: string) => {
     setLoading(true)
@@ -60,6 +64,23 @@ export function DirPickerDialog({
       setLoading(false)
     }
   }, [])
+
+  const submitCreate = useCallback(async () => {
+    const name = createName.trim()
+    if (!name || !currentPath || creatingBusy) return
+    setCreatingBusy(true)
+    setError(null)
+    try {
+      const result = await createDirectory(currentPath, name)
+      setCreating(false)
+      setCreateName('')
+      await navigate(result.path)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCreatingBusy(false)
+    }
+  }, [createName, currentPath, creatingBusy, navigate])
 
   // 打开时初始化（家目录，由后端默认）；关闭时不清理（下次打开继承）。
   useEffect(() => {
@@ -87,6 +108,20 @@ export function DirPickerDialog({
           <Button
             size="sm"
             variant="ghost"
+            onClick={() => {
+              setCreating(true)
+              setCreateName('')
+              setError(null)
+            }}
+            disabled={loading || creating || !currentPath || currentPath === DRIVES_SENTINEL}
+            title="新建文件夹"
+            className="shrink-0"
+          >
+            <FolderPlus className="size-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
             onClick={() => void navigate(DRIVES_SENTINEL)}
             disabled={loading}
             title="此电脑（盘符列表）"
@@ -109,6 +144,43 @@ export function DirPickerDialog({
         {/* 上一级 / 内容 */}
         <ScrollArea className="h-72 w-full min-w-0 overflow-hidden rounded-md border">
           <div className="w-full divide-y">
+            {creating && (
+              <div className="flex items-center gap-2 px-3 py-2">
+                <Folder className="size-4 shrink-0 text-muted-foreground" />
+                <Input
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void submitCreate()
+                    if (e.key === 'Escape') setCreating(false)
+                  }}
+                  autoFocus
+                  placeholder="输入文件夹名称"
+                  disabled={creatingBusy}
+                  className="h-7 flex-1 rounded-md font-mono text-xs"
+                />
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => void submitCreate()}
+                  disabled={!createName.trim() || creatingBusy}
+                  title="确认创建"
+                  className="shrink-0"
+                >
+                  {creatingBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                </Button>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => setCreating(false)}
+                  disabled={creatingBusy}
+                  title="取消"
+                  className="shrink-0"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            )}
             {parent && (
               <button
                 type="button"

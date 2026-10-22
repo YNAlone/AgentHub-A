@@ -8,6 +8,13 @@ Defines the event contract connecting adapters, AgentRunner persistence, SSE tra
 
 ## Requirements
 
+### Requirement: Pending plan edits SHALL synchronize clients
+The `dispatch.plan.updated` event MUST carry the validated `pendingPlan`. Clients MUST update the displayed plan and reconcile task statuses without executing the plan.
+
+#### Scenario: A pending plan is edited
+- **WHEN** a client receives `dispatch.plan.updated`
+- **THEN** it replaces the matching plan, preserves statuses for retained task ids, and initializes new task ids as pending.
+
 ### Requirement: StreamEvent SHALL be the only live update protocol
 
 All agent output, tool activity, artifact creation, pending approvals, dispatch state, and usage updates SHALL flow through `StreamEvent` before reaching the UI.

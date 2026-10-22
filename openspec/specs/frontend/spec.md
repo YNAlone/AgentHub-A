@@ -10,6 +10,13 @@ Defines client state, event application, and major UI boundaries. Detailed front
 
 ## Requirements
 
+### Requirement: Pending questions SHALL remain non-modal
+Pending questions SHALL appear in a collapsible panel above the message input, using workspace theme tokens without blocking message browsing or input.
+
+#### Scenario: A question awaits an answer
+- **WHEN** a user collapses the question panel
+- **THEN** the pending question remains available to answer later and the conversation remains usable.
+
 ### Requirement: Frontend SHALL consume server APIs and SSE
 
 The frontend MUST use REST routes and SSE stream events; it SHALL not import or call LLM SDKs directly.

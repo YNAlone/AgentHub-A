@@ -409,6 +409,7 @@ export type StreamEvent = BaseEvent &
     | { type: 'artifact.update'; artifactId: string; patch: Partial<ArtifactContent> }
     | { type: 'deploy.status'; messageId: string; deployment: DeployStatusRecord }
     | { type: 'dispatch.plan.pending'; pendingPlan: PendingDispatchPlan }
+    | { type: 'dispatch.plan.updated'; pendingPlan: PendingDispatchPlan }
     | { type: 'dispatch.plan.resolved'; pendingId: string; runId: string; approved: boolean; revising?: boolean }
     | { type: 'dispatch.plan'; runId: string; plan: DispatchPlanItem[] }
     | { type: 'dispatch.start'; parentRunId: string; childRunId: string; taskId: string; agentId: string }

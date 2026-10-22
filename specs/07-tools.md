@@ -214,7 +214,7 @@ write_artifact({
 
 **返回值**：`{ answers: Record<question, string> }`，其中 value 是用户选择的 label 列表与可选 freeform note 拼接后的文本。
 
-**运行机制**：handler 注册 `PendingQuestion`，通过 SSE 推 `ask_user.pending`；桌面端 `AskUserQuestionDialog` 与移动端 pending question UI 都可以提交答案。答案提交后 `pendingQuestions.answer()` 唤醒工具调用并继续 agent run。
+**运行机制**：handler 注册 `PendingQuestion`，通过 SSE 推 `ask_user.pending`；桌面端 `AskUserQuestionPanel`（非模态停靠卡片，位于消息列表与输入框之间，弹出时不阻塞浏览和输入）与移动端 pending question UI 都可以提交答案。答案提交后 `pendingQuestions.answer()` 唤醒工具调用并继续 agent run。
 
 **装备与注入**：
 - Custom agent 只有 `toolNames` 包含 `ask_user` 才能调用；内置 agents 与新建自定义 agent 默认装备。

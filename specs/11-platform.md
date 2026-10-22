@@ -245,6 +245,23 @@ Drives 列表通过 `statSync('A:\\')` … `statSync('Z:\\')` 探测可用盘符
 
 ---
 
+## DirPicker 新建文件夹
+
+`POST /api/fs/mkdir`（body：`{ parentPath, name }`，zod 校验）在指定父目录下创建单个子文件夹，`mkdirSync(recursive: false)`：
+
+- **parentPath 校验与 `/api/fs/listdir` 完全一致**：绝对路径；存在且是目录；`resolved !== homedir() && !isPathSafe(resolved)` → 403（home 自身可作起点）
+- **目标路径** `path.join(parent, name)` 创建前再过一次 `isPathSafe`（纵深防御）→ 403
+- **name 规则**（→ 400）：trim 后非空、≤255 字符、不能是 `.`/`..`、不含 `/` 与 `\`、不以 `.` 开头、不含 Windows 非法字符 `:*?"<>|` 与控制字符
+- **错误映射**：`EEXIST` → 409 `Folder already exists`；`EACCES`/`EPERM` → 403；其他 → 500；成功 → 201 `{ path }`
+
+**Why 拒绝 dotfile 名字**：listdir 会过滤以 `.` 开头的目录，允许创建等于「创建成功但列表里看不见」，用户会误以为创建失败——直接在入口拒绝并说明原因。
+
+**Why POSIX 上也拒绝 `\` 与 Windows 非法字符**：这类名字在 POSIX 合法，但会导致目录在双平台 round-trip（打包 / 同步 / workspace 迁移）时出错；DirPicker 的场景是「给 Agent 准备工作区」，可移植性优先。
+
+前端（`dir-picker-dialog.tsx`）：路径栏 `FolderPlus` 按钮触发列表顶部内联输入行（Enter 确认 / Esc 取消），成功后直接 `navigate` 进入新目录，失败走现有内联错误块并保留输入。
+
+---
+
 ## UI placeholder 平台感知
 
 `new-conversation-dialog.tsx` 的 boundPath 输入框 placeholder 按服务器平台显示：

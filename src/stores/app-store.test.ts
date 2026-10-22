@@ -115,6 +115,104 @@ describe('app-store dispatch plan binding', () => {
     expect(state.dispatchesByRunId.run_orch?.messageId).toBe('msg_plan')
     expect(selectDispatchForMessage(state, 'msg_plan')?.pendingPlanId).toBe('pdp_1')
   })
+
+  it('replaces the pending plan on dispatch.plan.updated, keeping existing task statuses', () => {
+    useAppStore.setState({
+      dispatchesByRunId: {
+        run_orch: {
+          runId: 'run_orch',
+          messageId: 'msg_plan',
+          plan: PLAN,
+          taskStatus: { task_frontend: 'pending' },
+          childRunIds: {},
+          reviewStatus: 'pending',
+          pendingPlanId: 'pdp_1',
+        },
+      },
+    })
+
+    const editedPlan: DispatchPlanItem[] = [
+      { id: 'task_frontend', agentId: 'ag_frontend', task: '实现页面调整（改）' },
+      { id: 'task_backend', agentId: 'ag_backend', task: '实现接口' },
+    ]
+    useAppStore.getState().applyEvent({
+      type: 'dispatch.plan.updated',
+      conversationId: 'conv_1',
+      timestamp: 2,
+      pendingPlan: {
+        id: 'pdp_1',
+        conversationId: 'conv_1',
+        agentId: 'ag_orchestrator',
+        runId: 'run_orch',
+        plan: editedPlan,
+        createdAt: 1,
+      },
+    })
+
+    const dispatch = useAppStore.getState().dispatchesByRunId.run_orch
+    expect(dispatch?.plan).toEqual(editedPlan)
+    expect(dispatch?.taskStatus).toEqual({ task_frontend: 'pending', task_backend: 'pending' })
+    expect(dispatch?.reviewStatus).toBe('pending')
+    expect(dispatch?.pendingPlanId).toBe('pdp_1')
+  })
+
+  it('ignores dispatch.plan.updated for a stale pendingPlanId', () => {
+    useAppStore.setState({
+      dispatchesByRunId: {
+        run_orch: {
+          runId: 'run_orch',
+          messageId: 'msg_plan',
+          plan: PLAN,
+          taskStatus: { task_frontend: 'pending' },
+          childRunIds: {},
+          reviewStatus: 'pending',
+          pendingPlanId: 'pdp_current',
+        },
+      },
+    })
+
+    useAppStore.getState().applyEvent({
+      type: 'dispatch.plan.updated',
+      conversationId: 'conv_1',
+      timestamp: 2,
+      pendingPlan: {
+        id: 'pdp_stale',
+        conversationId: 'conv_1',
+        agentId: 'ag_orchestrator',
+        runId: 'run_orch',
+        plan: [{ id: 't9', agentId: 'ag_pm', task: '别的计划' }],
+        createdAt: 1,
+      },
+    })
+
+    expect(useAppStore.getState().dispatchesByRunId.run_orch?.plan).toEqual(PLAN)
+  })
+
+  it('optimistically applies an edited plan via updatePendingPlan', () => {
+    useAppStore.setState({
+      dispatchesByRunId: {
+        run_orch: {
+          runId: 'run_orch',
+          messageId: 'msg_plan',
+          plan: PLAN,
+          taskStatus: { task_frontend: 'running' },
+          childRunIds: {},
+          reviewStatus: 'pending',
+          pendingPlanId: 'pdp_1',
+        },
+      },
+    })
+
+    const compiled: DispatchPlanItem[] = [
+      { id: 'task_frontend', agentId: 'ag_frontend', task: '实现页面调整（改）' },
+    ]
+    useAppStore.getState().updatePendingPlan('run_orch', 'pdp_1', compiled)
+
+    const dispatch = useAppStore.getState().dispatchesByRunId.run_orch
+    expect(dispatch?.plan).toEqual(compiled)
+    // 已有任务的状态保留（running），而不是被重置成 pending
+    expect(dispatch?.taskStatus.task_frontend).toBe('running')
+  })
 })
 
 describe('app-store run failure cleanup', () => {
