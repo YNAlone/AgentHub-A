@@ -19,10 +19,12 @@ import {
   getEffectiveApiKey,
 } from '@/server/settings-service'
 import { estimateTokens } from '@/shared/model-registry'
+import { getModelLimits } from '@/shared/model-registry'
+import { createContextBudget, estimateRequestTokens, assertRequestFits } from './context-budget'
 import type { DeployStatusRecord, MessagePart, ModelProvider } from '@/shared/types'
 
 const RECENT_MESSAGES_TO_KEEP = 6
-const MAX_COMPACTION_INPUT_CHARS = 60000
+const MAX_COMPACTION_INPUT_TOKENS = 131_072
 const SUMMARY_MAX_TOKENS = 1600
 
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1'
@@ -37,6 +39,7 @@ export interface CompactConversationResult {
 interface SummaryModelChoice {
   provider: ModelProvider | null
   modelId: string | null
+  apiBaseUrl?: string | null
   summarize(prompt: string, signal?: AbortSignal, systemPrompt?: string): Promise<string>
 }
 
@@ -99,14 +102,20 @@ async function compactConversationUnlocked(
     throw new Error('No compactable history yet')
   }
 
-  const rendered = await renderMessagesForCompaction(source, conv.agentIds)
+  const choice = await chooseSummaryModel(conv.agentIds)
+  const modelBudget = createContextBudget(getModelLimits(choice.provider, choice.modelId, choice.apiBaseUrl), MAX_COMPACTION_INPUT_TOKENS, SUMMARY_MAX_TOKENS)
+  const fixedPromptCost = estimateRequestTokens([
+    { role: 'system', content: COMPACTION_SYSTEM_PROMPT },
+    { role: 'user', content: buildCompactionPrompt(latest, '') },
+  ])
+  const rendered = await renderMessagesForCompaction(source, conv.agentIds, modelBudget.maxInputTokens - fixedPromptCost)
   if (!rendered.text.trim() || rendered.includedMessages.length === 0) {
     throw new Error('No compactable text in selected history')
   }
 
   const coveredUntil = rendered.includedMessages[rendered.includedMessages.length - 1]
   const prompt = buildCompactionPrompt(latest, rendered.text)
-  const choice = await chooseSummaryModel(conv.agentIds)
+  assertRequestFits(modelBudget, [{ role: 'system', content: COMPACTION_SYSTEM_PROMPT }, { role: 'user', content: prompt }])
   const summaryText = normalizeSummary(await choice.summarize(prompt, signal))
   signal?.throwIfAborted()
   const now = Date.now()
@@ -187,6 +196,7 @@ async function loadCompactableMessages(
 async function renderMessagesForCompaction(
   messages: MessageRow[],
   conversationAgentIds: string[],
+  sourceTokenBudget: number,
 ): Promise<RenderedCompactionInput> {
   const agentIds = new Set<string>()
   for (const m of messages) {
@@ -206,15 +216,16 @@ async function renderMessagesForCompaction(
 
   const chunks: string[] = []
   const includedMessages: MessageRow[] = []
-  let totalChars = 0
+  let totalTokens = 0
   for (const m of messages) {
     const rendered = renderMessageForCompaction(m, agentNameById, artifactTitles)
     if (!rendered) continue
     const next = rendered // Never advance coverage past text omitted from the model input.
-    if (totalChars + next.length > MAX_COMPACTION_INPUT_CHARS) break
+    const nextTokens = Buffer.byteLength(next, 'utf8') + 2
+    if (totalTokens + nextTokens > sourceTokenBudget) break
     chunks.push(next)
     includedMessages.push(m)
-    totalChars += next.length
+    totalTokens += nextTokens
   }
   return {
     text: chunks.join('\n\n'),
@@ -377,7 +388,7 @@ async function choiceFromCustomAgent(agent: AgentRow): Promise<SummaryModelChoic
     if (!key) return null
     const model = agent.modelId ?? 'gpt-5-codex'
     const client = new OpenAI({ apiKey: key, baseURL: agent.apiBaseUrl ?? undefined, maxRetries: 1 })
-    return { provider: 'openai', modelId: model, summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
+    return { provider: 'openai', modelId: model, apiBaseUrl: agent.apiBaseUrl, summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
       // Codex-compatible endpoints use Responses rather than Chat Completions.
       const result = await client.responses.create({ model, instructions: systemPrompt, input: prompt, max_output_tokens: SUMMARY_MAX_TOKENS }, { signal })
       recordAuxiliaryUsage(model, result.usage?.input_tokens ?? 0, result.usage?.output_tokens ?? 0)
@@ -435,6 +446,7 @@ function buildOpenAICompatibleChoice(
   return {
     provider,
     modelId,
+    apiBaseUrl,
     summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
       const result = await client.chat.completions.create(
         {
@@ -468,6 +480,7 @@ function buildAnthropicChoice(
   return {
     provider: 'anthropic',
     modelId,
+    apiBaseUrl,
     summarize: async (prompt, signal, systemPrompt = COMPACTION_SYSTEM_PROMPT) => {
       const result = await client.messages.create(
         {

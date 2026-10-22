@@ -20,23 +20,15 @@ import { useAppStore, useConversationUsageTotal } from '@/stores/app-store'
 export function UsageBadge({ conversationId }: { conversationId: string }) {
   const total = useConversationUsageTotal(conversationId)
   const agents = useAppStore((s) => s.agents)
-  const conv = useAppStore((s) => s.conversations[conversationId])
   const upsertMessage = useAppStore((s) => s.upsertMessage)
   const [compacting, setCompacting] = useState(false)
 
   if (total.runCount === 0) return null
 
-  // 取本会话内 contextWindow 最大的 agent 作为可见上限。详见 specs/13-conversation-context.md。
+  // Group conversations show the model that produced the measured prompt, not another agent's larger window.
   const contextWindow = (() => {
-    if (!conv) return 0
-    let maxCtx = 0
-    for (const aid of conv.agentIds) {
-      const a = agents[aid]
-      if (!a) continue
-      const limits = getModelLimits(a.modelProvider, a.modelId)
-      if (limits.contextWindow > maxCtx) maxCtx = limits.contextWindow
-    }
-    return maxCtx
+    const agent = total.lastAgentId ? agents[total.lastAgentId] : null
+    return agent ? getModelLimits(agent.modelProvider, total.lastModelId ?? agent.modelId, agent.apiBaseUrl).contextWindow : 0
   })()
 
   const handleCompact = async () => {
@@ -250,7 +242,7 @@ function ContextRow({ used, ceiling }: { used: number; ceiling: number }) {
   const gradientSize = hasData && pct > 0 ? `${10000 / pct}% 100%` : '100% 100%'
 
   return (
-    <div className="space-y-1" title="最近一次 prompt 大小 / 模型 contextWindow 上限">
+    <div className="space-y-1" title="供应商返回的最近一次输入 token / 当次模型标称窗口；实际输入限额还须扣除输出预留、安全余量，并受设置约束">
       <div className="flex items-baseline justify-between gap-3">
         <span className={cn('truncate', toneColor)}>当前 ctx</span>
         <span className={cn('shrink-0 font-mono', toneColor)}>

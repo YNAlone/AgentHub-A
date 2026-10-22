@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 
 import { db, schema } from '@/db/client'
 import type { AgentRow, ArtifactRow, MessageRow } from '@/db/schema'
-import { estimateTokens } from '@/shared/model-registry'
+import { estimateRequestTokens } from './context-budget'
 import type { DeployStatusRecord, MessagePart } from '@/shared/types'
 
 import {
@@ -30,6 +30,8 @@ export interface BuildHistoryOptions {
    * undefined 不检查预算；指定预算时摘要和 pinned 一并计入，超出则抛错。
    */
   tokenBudget?: number
+  /** Calibrated request-class multiplier; defaults to the cold-start UTF-8 byte count. */
+  estimateFactor?: number
 }
 
 const DEFAULT_MAX_TURNS = 1000000
@@ -43,6 +45,7 @@ export async function buildHistoryFor(
   const includePinned = options.includePinned ?? true
   const excludeMessageId = options.excludeMessageId
   const tokenBudget = options.tokenBudget
+  const estimateFactor = options.estimateFactor ?? 1
   const latestSummary = await getLatestContextSummary(conversationId)
 
   // 拉最近 N 条 complete 消息（按时间逆序取，下面再翻回正序）
@@ -128,13 +131,13 @@ export async function buildHistoryFor(
       msgId: latestSummary.id,
       isPinned: true,
       serialized: [summaryMessage],
-      tokens: estimateChatMessageTokens(summaryMessage),
+      tokens: estimateChatMessageTokens(summaryMessage, estimateFactor),
     })
   }
   for (const msg of merged) {
     const serialized = serializeMessage(msg, agentId, artifactTitles, agentNames)
     if (!serialized) continue
-    const tokens = serialized.reduce((sum, m) => sum + estimateChatMessageTokens(m), 0)
+    const tokens = serialized.reduce((sum, m) => sum + estimateChatMessageTokens(m, estimateFactor), 0)
     items.push({ msgId: msg.id, isPinned: pinnedIdSet.has(msg.id), serialized, tokens })
   }
 
@@ -154,28 +157,11 @@ export async function buildHistoryFor(
   return out
 }
 
-// ─── token 估算（粗粒度，4 字符≈1 token） ─────────────────
+// ─── 历史预算与最终请求使用同一序列化估算 ─────────────────
 
-function estimateChatMessageTokens(m: ChatCompletionMessageParam): number {
-  let s = ''
-  if (typeof m.content === 'string') {
-    s += m.content
-  } else if (Array.isArray(m.content)) {
-    for (const part of m.content) {
-      if (part.type === 'text') s += part.text
-      // multimodal image_url 不在 Phase A 历史里出现（spec 13），跳过估算
-    }
-  }
-  if ('tool_calls' in m && m.tool_calls) {
-    for (const tc of m.tool_calls) {
-      // OpenAI ChatCompletion tool_calls union 含 function / custom 两种；function 形态走 .function.name/arguments
-      if (tc.type === 'function') {
-        s += tc.function.name + tc.function.arguments
-      }
-    }
-  }
-  // 每条 message 至少有 role / metadata 开销，加 4 token 兜底
-  return estimateTokens(s) + 4
+function estimateChatMessageTokens(m: ChatCompletionMessageParam, factor: number): number {
+  // Per-message JSON wrappers overcount slightly, which is safer than losing pinned context.
+  return Math.ceil(estimateRequestTokens([m]) * factor)
 }
 
 // ─── 序列化核心 ─────────────────────────────────────────

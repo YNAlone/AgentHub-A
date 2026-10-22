@@ -1212,6 +1212,9 @@ export interface ConversationUsageTotal {
   totalTokens: number
   /** 最近一次有 usage 的 run 的 input prompt token 数（context window 仪表用） */
   lastInputTokens: number
+  /** 最近一次有用量的 Agent 与模型，用来对应其真实窗口而非群聊最大窗口。 */
+  lastAgentId: string | null
+  lastModelId: string | null
   /** key = agentId，value = 该 agent 的累计 input+output tokens */
   byAgent: Record<string, number>
   /** key = modelId，value = 累计 input+output tokens */
@@ -1240,6 +1243,8 @@ export const useConversationUsageTotal = (conversationId: string | null): Conver
       cacheReadTokens: 0,
       totalTokens: 0,
       lastInputTokens: 0,
+      lastAgentId: null,
+      lastModelId: null,
       byAgent: {},
       byModel: {},
       runCount: 0,
@@ -1263,6 +1268,8 @@ export const useConversationUsageTotal = (conversationId: string | null): Conver
         if (run.startedAt > latestRunWithUsage) {
           latestRunWithUsage = run.startedAt
           result.lastInputTokens = u.lastInputTokens ?? u.inputTokens
+          result.lastAgentId = run.agentId
+          result.lastModelId = u.model ?? null
         }
       }
     }
@@ -1292,6 +1299,8 @@ export const useConversationUsageTotal = (conversationId: string | null): Conver
         if (m.createdAt > latestMsgCreatedAt) {
           latestMsgCreatedAt = m.createdAt
           result.lastInputTokens = u.inputTokens
+          result.lastAgentId = m.agentId
+          result.lastModelId = m.agentId ? (agents[m.agentId]?.modelId ?? null) : null
         }
       }
     }

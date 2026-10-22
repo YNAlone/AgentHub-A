@@ -34,3 +34,15 @@ it('keeps source history on model failure and preserves same-millisecond recent 
   expect(JSON.stringify(restored)).toContain('约束 2')
   expect(db.select().from(schema.messages).all().filter((m) => m.id.startsWith('compact-'))).toHaveLength(8)
 })
+
+it('does not truncate a Chinese source message to fit an auxiliary token budget', async () => {
+  model.create.mockClear()
+  db.insert(schema.agents).values({ id: 'large-summary-agent', name: 'summary', avatar: 'S', description: 'test', capabilities: [], systemPrompt: 'test', adapterName: 'custom', modelProvider: 'openai-compatible', modelId: 'test-model', apiKey: 'fake-test-key', apiBaseUrl: 'https://model.invalid', toolNames: [], createdAt: 1 }).run()
+  db.insert(schema.conversations).values({ id: 'large-source', title: 'large', mode: 'single', agentIds: ['large-summary-agent'], createdAt: 1, updatedAt: 1 }).run()
+  for (let i = 0; i < 8; i++) db.insert(schema.messages).values({ id: `large-${i}`, conversationId: 'large-source', role: 'user', parts: [{ type: 'text', content: i === 0 ? '中'.repeat(70_000) : `约束 ${i}` }], status: 'complete', createdAt: i + 1 }).run()
+
+  await expect(compactConversation('large-source')).rejects.toThrow('No compactable text')
+  expect(model.create).not.toHaveBeenCalled()
+  expect(await getLatestContextSummary('large-source')).toBeNull()
+  expect(await buildHistoryFor('large-summary-agent', 'large-source')).toHaveLength(8)
+})

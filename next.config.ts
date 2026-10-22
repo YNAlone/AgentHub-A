@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
+  // E2E runs beside a developer's live Next server without contending for its build lock.
+  ...(process.env.AGENTHUB_E2E === '1' ? { distDir: '.next-e2e' } : {}),
   // Electron 打包用：生成 .next/standalone 自包含 server（详见 Spec 12 §2 / §6）
   output: 'standalone',
 

@@ -1,6 +1,6 @@
 import { projects, recallMemoryBlock } from './personal-runtime'
 import { buildAutomaticHistory } from './automatic-context'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 import { and, desc, eq, gt, inArray } from 'drizzle-orm'
@@ -19,7 +19,7 @@ import type {
   StreamEvent,
   TaskResultReport,
 } from '@/shared/types'
-import { estimateTokens, getModelLimits } from '@/shared/model-registry'
+import { getModelLimits } from '@/shared/model-registry'
 
 import { agentRegistry } from './adapters/registry'
 import type { AdapterAttachment, AdapterInput } from './adapters/types'
@@ -59,6 +59,10 @@ import { newArtifactId, newRunId } from './ids'
 import { pendingDispatchPlans, type PlanReviewOutcome } from './pending-dispatch-plans'
 import { buildProjectFiles } from './project-artifact'
 import { getAppSettings } from './settings-service'
+import { createContextBudget, estimateRequestTokens, toApiTool } from './context-budget'
+import { getContextCalibration, recordContextSample } from './context-calibration'
+import { getPersonalSettings } from './personal-settings'
+import { toolRegistry } from './tools/registry'
 import {
   evaluateTaskResultReport,
   isTaskResultReportToolName,
@@ -2007,14 +2011,36 @@ async function buildAdapterInput(
       systemPromptWithWorkspace += '\n\n' + GROUP_CHAT_SYSTEM_NOTE
     }
 
-    const limits = getModelLimits(agent.modelProvider, agent.modelId)
-    const promptEstimate =
-      estimateTokens(systemPromptWithWorkspace) + estimateTokens(prompt) + 512 /* margin */
-    if (promptEstimate + limits.outputReserve > limits.contextWindow) {
-      throw new Error('当前输入、系统约束和记忆已超过模型预算；请缩短输入或调整模型，原始历史保持不变。')
-    }
-    const historyBudget = Math.max(0, limits.contextWindow - limits.outputReserve - promptEstimate)
-    history = await buildAutomaticHistory(agent.id, args.conversationId, args.triggerMessageId, historyBudget, activeRuns.get(runId)?.signal)
+  }
+
+  const limits = getModelLimits(agent.modelProvider, agent.modelId, effectiveApiBaseUrl)
+  const contextSettings = getPersonalSettings()
+  const calibrationIdentity = agent.adapterName === 'custom' && agent.modelProvider && agent.modelId
+    ? { provider: agent.modelProvider, modelId: agent.modelId }
+    : null
+  // Missing or unreadable observations only cost efficiency; they must not block a model run.
+  let calibration = { plainFactor: 1, toolFactor: 1 }
+  if (calibrationIdentity) {
+    try { calibration = getContextCalibration(calibrationIdentity.provider, calibrationIdentity.modelId, effectiveApiBaseUrl) } catch { /* retain cold-start estimate */ }
+  }
+  const contextBudget = createContextBudget(limits, contextSettings.contextInputLimitTokens, contextSettings.contextOutputLimitTokens, calibration)
+  const requestTools = agent.adapterName === 'custom' ? toolRegistry.resolve(toolNames).map(toApiTool) : []
+  const baseMessages: ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemPromptWithWorkspace },
+    { role: 'user', content: prompt },
+  ]
+  // Multimodal data URLs are assembled by the adapter; file size is a conservative preflight proxy.
+  const imageBytes = agent.adapterName === 'custom' && agent.supportsVision
+    ? (attachments.filter((a) => a.kind === 'image').slice(0, 5)).reduce((sum, attachment) => {
+        try { return sum + 4 * Math.ceil(statSync(attachment.absPath).size / 3) + 128 } catch { return sum }
+      }, 0)
+    : 0
+  const baseEstimate = Math.ceil(estimateRequestTokens(baseMessages, requestTools) * calibration.plainFactor) + imageBytes
+  if (baseEstimate > contextBudget.maxInputTokens) {
+    throw new Error(`当前输入、工具定义和固定约束已超过模型预算（估算 ${baseEstimate}/${contextBudget.maxInputTokens} tokens）；请缩短输入或调整模型。`)
+  }
+  if (!args.overridePrompt) {
+    history = await buildAutomaticHistory(agent.id, args.conversationId, args.triggerMessageId, contextBudget.maxInputTokens - baseEstimate, activeRuns.get(runId)?.signal, Math.max(calibration.plainFactor, calibration.toolFactor))
   }
 
 
@@ -2032,6 +2058,12 @@ async function buildAdapterInput(
     toolNames,
     attachments: attachments.length > 0 ? attachments : undefined,
     history: history.length > 0 ? history : undefined,
+    contextBudget,
+    onContextUsage: calibrationIdentity
+      ? (rawEstimate, actualInputTokens, hasToolResult) => {
+          try { recordContextSample(calibrationIdentity.provider, calibrationIdentity.modelId, effectiveApiBaseUrl, rawEstimate, actualInputTokens, hasToolResult) } catch { /* numeric telemetry must not interrupt the run */ }
+        }
+      : undefined,
     customConfig:
       agent.adapterName === 'custom' && agent.modelProvider && agent.modelId
         ? {

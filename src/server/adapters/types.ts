@@ -1,6 +1,7 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 import type { AdapterName, ModelProvider, StreamEvent } from '@/shared/types'
+import type { ContextBudget } from '@/server/context-budget'
 
 /**
  * AgentPlatformAdapter — 屏蔽不同 Agent 平台（Claude Code / Codex / Custom / Mock）
@@ -58,6 +59,10 @@ export interface AdapterInput {
   history?: ChatCompletionMessageParam[]
   /** Checked again after the SDK lock is acquired so queued work cannot use deleted memory. */
   contextState?: { memoryBlock: string; projectId: string | null; summaryId: string | null }
+  /** Complete-request limits calculated once by AgentRunner and rechecked by custom tool turns. */
+  contextBudget?: ContextBudget
+  /** Numeric-only request usage callback supplied by AgentRunner for model-specific calibration. */
+  onContextUsage?: (rawEstimate: number, actualInputTokens: number, hasToolResult: boolean) => void
 
   /** 仅 CustomAgentAdapter 使用（OpenAI 兼容协议特有的模型选择） */
   customConfig?: {

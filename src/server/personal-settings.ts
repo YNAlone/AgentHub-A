@@ -3,6 +3,8 @@ import { sqlite } from '@/db/client'
 
 export const PersonalSettings = z.object({
   automaticCompaction: z.boolean().default(true),
+  contextInputLimitTokens: z.number().int().min(16_000).max(1_000_000).default(128_000),
+  contextOutputLimitTokens: z.number().int().min(1024).max(393_216).nullable().default(null),
   memoryEnabled: z.boolean().default(true),
   memoryUseEnabled: z.boolean().default(true),
   auxiliaryAgentId: z.string().nullable().default(null),

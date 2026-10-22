@@ -201,23 +201,23 @@ const history = await buildHistoryFor(agent.id, args.conversationId, {
 
 ## Token 预算
 
-`buildHistoryFor` 的 `tokenBudget` 选项（单位：tokens）控制 history 的总 token 上限，**不含** system prompt / current user / output reserve。AgentRunner 算预算：
+`buildHistoryFor` 的 `tokenBudget` 选项控制 history 的估算上限，**不含** system prompt / current user / output reserve。AgentRunner 先估算固定内容、工具定义和附件，再把剩余额度交给 history：
 
 ```typescript
-const limits = getModelLimits(agent.modelProvider, agent.modelId)  // src/shared/model-registry.ts
-const promptEstimate = estimateTokens(systemPrompt) + estimateTokens(currentUser) + 512  // safety margin
-const historyBudget = Math.max(0, limits.contextWindow - limits.outputReserve - promptEstimate)
+const limits = getModelLimits(agent.modelProvider, agent.modelId, agent.apiBaseUrl)
+const budget = createContextBudget(limits, settings.contextInputLimitTokens, settings.contextOutputLimitTokens)
+const historyBudget = budget.maxInputTokens - estimateRequestTokens(baseMessages, tools) - imageBytes
 ```
 
-### 截断算法
+### 历史与工具轮次
 
-序列化全部 N 条候选消息（每条 → 1 个 user message OR 1 个 assistant + K 个 tool messages），按 chronological order 排好。每个序列化组算出 token 数（粗粒度：4 字符 ≈ 1 token，外加每条 message 4 token metadata margin）。
+序列化全部候选消息（每条 → 1 个 user message OR 1 个 assistant + K 个 tool messages），按 chronological order 排好。每组用完整 JSON 请求形态的 UTF-8 字节数估算；这是未接入模型 tokenizer 前有意偏高的保守估算。
 
-如果总 token 超 budget，**从老到新**遍历，跳过 pinned 项，丢非 pinned 项直到符合预算。pinned 永远保留（即便总数仍超 budget——用户的 pin 是显式契约）。
+如果总估算超出硬预算，先自动压缩可压缩历史；摘要、Pin 和最近消息仍超限时明确失败，不静默丢弃原始消息。CustomAgentAdapter 在每次模型请求前对实际组装的 messages 与 tools 再检查一次；工具结果增长导致超限时保留已执行结果并停止，不自动重放副作用。
 
 ### 模型上下文窗口表
 
-`src/shared/model-registry.ts:KNOWN_MODELS` 列出常见 modelId 的精确 contextWindow + outputReserve。不在表里的 modelId 走 provider fallback：
+`src/shared/model-registry.ts:KNOWN_MODELS` 列出 modelId 与 provider 配对的已知 contextWindow、默认输出预留和已核实最大输出。DeepSeek `deepseek-flash`、`deepseek-v4-pro` 与路由至 V4.1 Flash 的 `deepseek-v4-flash` 为 1M；自定义兼容端点不自动继承该窗口。不在表里的 modelId 走 provider fallback：
 
 | Provider | Fallback contextWindow |
 |---|---|
@@ -225,15 +225,15 @@ const historyBudget = Math.max(0, limits.contextWindow - limits.outputReserve - 
 | openai | 128K |
 | deepseek | 64K |
 | volcano-ark | 32K |
-| openai-compatible | 128K |
+| openai-compatible | 32K |
 
 Provider 也未知（ClaudeCode adapter 没 modelProvider 字段）→ 兜底 200K。
 
-reasoning 模型（DeepSeek R1 / OpenAI o1 等）`outputReserve` 加大到 16K-32K，因为 thinking 内容也吃输出 token。
+DeepSeek V4 默认思考模式保留 64K，发送的 `max_tokens` 与预留数完全一致；用户可在已核实的供应商最大输出内调节。默认运行输入上限为 128K，可选 256K、512K、1M，最终始终受模型窗口、输出与安全余量限制。SDK 自身的内部窗口和压缩仍由 Claude/Codex SDK 管理。
 
 ### Token 估算
 
-`estimateTokens(s) = ceil(s.length / 4)`。中英混合实测误差 10-20% 量级，对预算决策足够。Phase D 不引入 tiktoken / @anthropic/tokenizer 等真正 tokenizer 包（依赖大、性能开销大、对粗粒度截断收益小）。
+完整请求预算冷启动使用 `UTF-8 字节数 ≈ 估算 token 数`，安全余量为 `min(max(8192, 模型窗口的 5%), (窗口－输出预留)的 25%)`，避免小窗口被余量全部占满。按模型和端点指纹分别累计普通请求、含工具结果请求的估算与实际 usage；同类达到至少 30 次样本（含 5 次 ≥4096 字节）后可用最高实测比例再上浮 25% 的系数，7 天后过期。图片请求不参与文本校准，未知类别继续按字节估算。这不是所有模型的数学上界；API 返回的 usage 是实际输入依据。普通记忆检索等非完整请求用途仍可能使用旧粗估函数。
 
 ---
 
@@ -316,7 +316,7 @@ compact 成功后，service 额外写一条 `role='system'` 的提示消息，�
 
 数据来源：
 - `lastInputTokens`：`useConversationUsageTotal` 给出的最近一次 streaming run 的 input token 数（只在当前 session streaming 过的 conversation 才有；旧会话刷新后为 0，此时 popover 隐藏整个 badge）
-- `contextWindow`：会话内所有 agent 中 contextWindow 的最大值
+- `contextWindow`：最近一次有用量的 Agent / 模型的标称窗口；与输入运行上限、输出预留和安全余量不同
 
 **未显示场景**：`useConversationUsageTotal.runCount === 0` 时整个 badge 隐藏（沿用原行为）。
 
@@ -330,7 +330,7 @@ compact 成功后，service 额外写一条 `role='system'` 的提示消息，�
 | **thinking part 回传** | 一律丢。OpenAI 不支持回传 reasoning，DeepSeek 等模型回传也无意义 |
 | **artifact 全文注入** | 永远只放 `[产物: title (id=art_xxx)]` 占位，agent 用 `read_artifact` 按需取 |
 | **跨 conversation 记忆** | 不做。每个 conversation 是独立 sandbox |
-| **精确 tokenizer**（tiktoken / @anthropic/tokenizer） | 粗粒度 4 字符≈1 token 估算误差 10-20%，对预算决策够用；引入真 tokenizer 增加 ~MB 级依赖 + 启动开销，性价比低 |
+| **未经验证的模型 tokenizer** | 本期使用保守 UTF-8 估算和显式余量，不声称字符固定比例足以安全填满 1M；精确计数需为目标模型单独验证 |
 | **省流 / 全量 模式开关** | 让用户判断「该开省流还是全量」是错误的抽象——真实需求是「成本透明 + 自动稳定」。Phase D 的用量指示器 + 自动预算已经覆盖；用户主动管理走 pin / unpin 细粒度 |
 
 ---

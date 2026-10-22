@@ -9,6 +9,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".next-e2e/**", // E2E uses a separate Next cache while the developer server is running.
     "out/**",
     "build/**",
     "dist-electron/**",

@@ -28,6 +28,6 @@ export default defineConfig({
     url: 'http://127.0.0.1:3130/pair',
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { ...process.env, AGENTHUB_DATA_DIR: E2E_DATA_DIR },
+    env: { ...process.env, AGENTHUB_DATA_DIR: E2E_DATA_DIR, AGENTHUB_E2E: '1' },
   },
 })

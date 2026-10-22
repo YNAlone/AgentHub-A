@@ -3,8 +3,10 @@ import { readFileSync } from 'node:fs'
 import OpenAI from 'openai'
 
 import { newMessageId } from '@/server/ids'
+import { assertRequestFits, createContextBudget, estimateRequestTokens, toApiTool } from '@/server/context-budget'
 import { toolRegistry } from '@/server/tools/registry'
 import type { ToolContext } from '@/server/tools/types'
+import { getModelLimits } from '@/shared/model-registry'
 import type { DeployStatusRecord, ModelProvider, StreamEvent } from '@/shared/types'
 
 import { resolveCustomProviderClientConfig } from './custom-provider-client'
@@ -50,6 +52,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
 
     const toolDefs = toolRegistry.resolve(input.toolNames)
     const apiTools = toolDefs.map(toApiTool)
+    const contextBudget = input.contextBudget ?? createContextBudget(getModelLimits(modelProvider, modelId, input.apiBaseUrl))
 
     const ctx: ToolContext = {
       conversationId: input.conversationId,
@@ -90,6 +93,18 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
       if (signal.aborted) return
       turn++
 
+      // A tool result can grow the next request after the initial history check.
+      const rawEstimate = estimateRequestTokens(messages, apiTools)
+      const hasToolResult = messages.some((message) => message.role === 'tool')
+      try {
+        assertRequestFits(contextBudget, messages, apiTools, rawEstimate)
+      } catch (error) {
+        if (turn > 1) {
+          yield baseEvent(input, { type: 'run.usage', runId: input.runId, usage: { ...runUsage, model: modelId } })
+        }
+        throw error
+      }
+
       const messageId = newMessageId()
       yield baseEvent(input, {
         type: 'message.start',
@@ -112,6 +127,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
             model: modelId,
             messages,
             tools: apiTools.length > 0 ? apiTools : undefined,
+            max_tokens: contextBudget.maxOutputTokens,
             stream: true,
             stream_options: { include_usage: true },
           },
@@ -123,6 +139,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
       }
 
       let finishReason: string | null = null
+      let usageRecorded = false
       // 本 turn 单条 message 的 usage（per-message）；与 runUsage 同时维护
       const msgUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }
 
@@ -142,6 +159,11 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
           runUsage.outputTokens += out
           runUsage.cacheReadTokens += cached
           runUsage.lastInputTokens = inp
+          // Multimodal payloads lack a stable byte-to-token relation and never train text calibration.
+          if (inp > 0 && !usageRecorded && !useMultimodal) {
+            input.onContextUsage?.(rawEstimate, inp, hasToolResult)
+            usageRecorded = true
+          }
         }
         const choice = chunk.choices[0]
         if (!choice) continue
@@ -234,6 +256,15 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
         ...(reasoningBuffer ? { reasoning_content: reasoningBuffer } : {}),
       }
       messages.push(assistantMsg as ChatMessage)
+
+      if (finishReason === 'length') {
+        if (msgUsage.inputTokens > 0 || msgUsage.outputTokens > 0) {
+          yield baseEvent(input, { type: 'message.usage', messageId, usage: msgUsage })
+        }
+        yield baseEvent(input, { type: 'message.end', messageId })
+        yield baseEvent(input, { type: 'run.usage', runId: input.runId, usage: { ...runUsage, model: modelId } })
+        throw new Error('模型输出达到 max_tokens 或上下文上限，回答不完整；请调整输出上限或缩短输入后重试。')
+      }
 
       if (toolCalls.length === 0 || finishReason === 'stop') {
         if (msgUsage.inputTokens > 0 || msgUsage.outputTokens > 0) {
@@ -357,21 +388,6 @@ function buildClient(
     ...resolveCustomProviderClientConfig(provider, overrideKey, apiBaseUrl),
     maxRetries: MAX_API_RETRIES,
   })
-}
-
-function toApiTool(t: {
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-}): OpenAI.Chat.Completions.ChatCompletionTool {
-  return {
-    type: 'function',
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    },
-  }
 }
 
 function hasArtifactId(value: unknown): value is { artifactId: string } {
