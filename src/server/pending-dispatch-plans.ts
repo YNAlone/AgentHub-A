@@ -21,6 +21,10 @@ export type PendingDispatchPlanResult =
   | { ok: true }
   | { ok: false; error: string }
 
+export type PendingDispatchPlanUpdateResult =
+  | { ok: true; pendingPlan: PendingDispatchPlan }
+  | { ok: false; error: string }
+
 class PendingDispatchPlansStore {
   private map = new Map<string, PendingEntry>()
 
@@ -70,6 +74,34 @@ class PendingDispatchPlansStore {
       .filter((entry) => entry.pendingPlan.conversationId === conversationId)
       .map((entry) => entry.pendingPlan)
       .sort((a, b) => a.createdAt - b.createdAt)
+  }
+
+  /**
+   * 用户在审批卡上直接编辑计划：先过 validator 编译+校验，通过后替换 pending 计划并广播
+   * dispatch.plan.updated（各端实时刷新展示）；失败则保持原计划不动并返回错误。
+   */
+  update(id: string, plan: DispatchPlanItem[]): PendingDispatchPlanUpdateResult {
+    const entry = this.map.get(id)
+    if (!entry) return { ok: false, error: 'Pending dispatch plan not found' }
+
+    let compiledPlan: DispatchPlanItem[]
+    try {
+      compiledPlan = entry.validator(plan)
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+
+    entry.pendingPlan = { ...entry.pendingPlan, plan: compiledPlan }
+    eventBus.publish({
+      type: 'dispatch.plan.updated',
+      conversationId: entry.pendingPlan.conversationId,
+      timestamp: Date.now(),
+      pendingPlan: entry.pendingPlan,
+    })
+    return { ok: true, pendingPlan: entry.pendingPlan }
   }
 
   /** 批准：用已登记的（只读）计划执行；仍过一遍 validator 做防御性校验。 */

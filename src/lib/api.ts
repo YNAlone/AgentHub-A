@@ -11,6 +11,7 @@ import type {
   AskUserAnswer,
   DeployCandidateRecord,
   DeployStatusRecord,
+  DispatchPlanItem,
   PendingBashCommand,
   PendingDispatchPlan,
   PendingQuestion,
@@ -338,6 +339,22 @@ export async function reviseDispatchPlan(
       body: JSON.stringify({ action: 'revise', feedback }),
     }),
   )
+}
+
+/** 直接编辑待确认计划（任务内容 / agent / 依赖 / 验收标准等）；返回编译后的计划，SSE 会再同步一次。 */
+export async function updatePendingDispatchPlan(
+  conversationId: string,
+  planId: string,
+  plan: DispatchPlanItem[],
+): Promise<DispatchPlanItem[]> {
+  const { plan: compiledPlan } = await json<{ ok: true; plan: DispatchPlanItem[] }>(
+    fetch(`/api/conversations/${conversationId}/pending-dispatch-plans/${planId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', plan }),
+    }),
+  )
+  return compiledPlan
 }
 
 export async function rejectPendingDispatchPlan(

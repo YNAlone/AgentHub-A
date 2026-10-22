@@ -39,9 +39,11 @@ export const BUILTIN_AGENTS: AgentInsert[] = [
 3. 分派前根据群聊中 Agent 的能力选择负责人；不要把同一职责重复派给多个 Agent。
 4. 产物链路要清楚：PRD -> 风格指南 -> web_app -> review；缺少上游产物时允许跳过或让对应 Agent 补齐。
 5. 聚合结果时只总结关键结论、产物位置和下一步决策，不重复每个 Agent 的长篇过程。`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    // BigModel（智谱）Anthropic 兼容端点只支持 Anthropic 协议，custom adapter 走 OpenAI 协议用不了，
+    // 必须用 claude-code adapter；凭据由设置或环境变量提供，源码仅保留兼容端点
+    adapterName: 'claude-code',
+    modelId: 'glm-5.3-flash',
+    apiBaseUrl: 'https://open.bigmodel.cn/api/anthropic',
     toolNames: ['plan_tasks', 'ask_user', 'fs_list', 'fs_read', 'read_attachment', 'read_artifact'],
     isBuiltin: true,
     isOrchestrator: true,
@@ -70,9 +72,11 @@ PRD 必须包含：
 6. 验收标准与风险
 
 文风简洁有结构，使用 markdown 标题分层。除产物外，对用户的回复一段话即可。`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    // BigModel（智谱）Anthropic 兼容端点只支持 Anthropic 协议，custom adapter 走 OpenAI 协议用不了，
+    // 必须用 claude-code adapter；凭据由设置或环境变量提供，源码仅保留兼容端点
+    adapterName: 'claude-code',
+    modelId: 'glm-5.3-flash',
+    apiBaseUrl: 'https://open.bigmodel.cn/api/anthropic',
     toolNames: ['write_artifact', 'read_artifact', 'read_attachment', 'ask_user', 'fs_list', 'fs_read'],
     isBuiltin: true,
     isOrchestrator: false,
@@ -104,9 +108,11 @@ PRD 必须包含：
 如有上游 PRD，先用 read_artifact 读取后再设计。如用户上传了视觉参考图，请认真观察后再产出。
 
 ${UI_DESIGNER_ARTIFACT_PROMPT_HINT}`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    // BigModel（智谱）Anthropic 兼容端点只支持 Anthropic 协议，custom adapter 走 OpenAI 协议用不了，
+    // 必须用 claude-code adapter；凭据由设置或环境变量提供，源码仅保留兼容端点
+    adapterName: 'claude-code',
+    modelId: 'glm-5.3-flash',
+    apiBaseUrl: 'https://open.bigmodel.cn/api/anthropic',
     toolNames: ['write_artifact', 'read_artifact', 'read_attachment', 'ask_user', 'fs_list', 'fs_read'],
     isBuiltin: true,
     isOrchestrator: false,
@@ -134,9 +140,11 @@ ${UI_DESIGNER_ARTIFACT_PROMPT_HINT}`,
 6. 完成 web_app 产物后必须调用 deploy_artifact，让用户在消息里拿到部署状态卡和可打开的预览路径。
 
 完成 web_app 产物后必须调用 deploy_artifact；完成本地项目构建后优先调用 deploy_workspace 部署 dist/build/out 等静态目录，让用户在消息里拿到部署状态卡和可打开的预览路径。部署工具返回的 previewPath 是当前 AgentHub 实例下的相对路径，不要在文字总结里把它改写成公网域名或自造完整 URL；让用户点击部署卡片按钮，或原样引用 previewPath。`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    // BigModel（智谱）Anthropic 兼容端点只支持 Anthropic 协议，custom adapter 走 OpenAI 协议用不了，
+    // 必须用 claude-code adapter；凭据由设置或环境变量提供，源码仅保留兼容端点
+    adapterName: 'claude-code',
+    modelId: 'glm-5.3-flash',
+    apiBaseUrl: 'https://open.bigmodel.cn/api/anthropic',
     toolNames: [
       'write_artifact',
       'deploy_artifact',
@@ -169,9 +177,11 @@ ${UI_DESIGNER_ARTIFACT_PROMPT_HINT}`,
 4. 如果没有明显问题，要明确说“未发现阻塞问题”，再列出剩余风险或未验证项。
 
 不要写代码或新的产物，只输出审查报告（文字）。`,
-    adapterName: 'custom',
-    modelProvider: 'deepseek',
-    modelId: 'deepseek-v4-flash',
+    // BigModel（智谱）Anthropic 兼容端点只支持 Anthropic 协议，custom adapter 走 OpenAI 协议用不了，
+    // 必须用 claude-code adapter；凭据由设置或环境变量提供，源码仅保留兼容端点
+    adapterName: 'claude-code',
+    modelId: 'glm-5.3-flash',
+    apiBaseUrl: 'https://open.bigmodel.cn/api/anthropic',
     toolNames: ['read_artifact', 'read_attachment', 'ask_user', 'fs_list', 'fs_read', 'bash'],
     isBuiltin: true,
     isOrchestrator: false,

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { AddAgentDialog } from '@/components/add-agent-dialog'
 import { AgentInfoPopover } from '@/components/agent-info-popover'
-import { AskUserQuestionDialog } from '@/components/ask-user-question-dialog'
+import { AskUserQuestionPanel } from '@/components/ask-user-question-panel'
 import { ArtifactLibrary } from '@/components/artifact-library'
 import { ConversationOutline } from '@/components/conversation-outline'
 import { FileLibraryDialog } from '@/components/file-library-dialog'
@@ -232,6 +232,8 @@ export function ChatPanel() {
           <MessageList conversationId={conv.id} />
           <PendingBashCommandsPanel conversationId={conv.id} />
           <PendingWritesPanel conversationId={conv.id} />
+          {/* 问答卡片非模态停靠在输入框上方：弹出时不挡消息浏览，输入框照常可用 */}
+          <AskUserQuestionPanel conversationId={conv.id} />
           <MessageInput conversationId={conv.id} />
         </>
       ) : isDiffTabId(activeTab) ? (
@@ -268,7 +270,6 @@ export function ChatPanel() {
         </DialogContent>
       </Dialog>
 
-      <AskUserQuestionDialog conversationId={conv.id} />
     </main>
   )
 }

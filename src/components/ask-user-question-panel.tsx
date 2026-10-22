@@ -1,35 +1,27 @@
 'use client'
 
-import { CheckCheck, HelpCircle, Loader2, Sparkles } from 'lucide-react'
+import { CheckCheck, ChevronDown, ChevronUp, HelpCircle, Loader2, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AgentAvatar } from '@/components/agent-avatar'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { fetchPendingQuestions, submitQuestionAnswers } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { AskUserAnswer, AskUserQuestionItem } from '@/shared/types'
 import { useAppStore, usePendingQuestions } from '@/stores/app-store'
 
 /**
- * AskUserQuestionDialog —— ask_user 工具的结构化问答弹窗。
+ * AskUserQuestionPanel —— ask_user 工具的结构化问答卡片（非模态）。
  *
  * Agent 调 ask_user → 后端 register pending → SSE → store → 此组件挂载渲染。
  * 用户点选项 → 提交后端 → resolver 唤醒 agent 收到答案。
  *
+ * 卡片停靠在消息列表与输入框之间，不遮挡对话：弹出时用户仍可浏览消息、继续输入。
  * 一次显示一个 pending question；队列里多个问题依次处理。Mount 时拉一次兜底（HMR / 刷新场景）。
  */
 const FREE_OTHER = '__other__'
 
-export function AskUserQuestionDialog({ conversationId }: { conversationId: string }) {
+export function AskUserQuestionPanel({ conversationId }: { conversationId: string }) {
   const pending = usePendingQuestions(conversationId)
   const setPendingQuestionsForConversation = useAppStore(
     (s) => s.setPendingQuestionsForConversation,
@@ -43,34 +35,29 @@ export function AskUserQuestionDialog({ conversationId }: { conversationId: stri
         if (!cancelled) setPendingQuestionsForConversation(conversationId, list)
       })
       .catch((err) => {
-        console.warn('[AskUserQuestionDialog] fetch failed', err)
+        console.warn('[AskUserQuestionPanel] fetch failed', err)
       })
     return () => {
       cancelled = true
     }
   }, [conversationId, setPendingQuestionsForConversation])
 
-  const current = pending[0] ?? null
-  const agentName = current ? agents[current.agentId]?.name ?? current.agentId : ''
+  if (pending.length === 0) return null
+
+  const current = pending[0]
+  const agentName = agents[current.agentId]?.name ?? current.agentId
 
   return (
-    <Dialog open={current !== null} onOpenChange={() => { /* 必须答完才能关 */ }}>
-      <DialogContent
-        showCloseButton={false}
-        className="max-w-[min(720px,calc(100vw-2rem))] sm:max-w-[min(720px,calc(100vw-2rem))] gap-0 p-0"
-      >
-        {current && (
-          <AskUserBody
-            conversationId={conversationId}
-            questionId={current.id}
-            agentName={agentName}
-            agentId={current.agentId}
-            questions={current.questions}
-            queueSize={pending.length}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <div className="shrink-0 border-t bg-[#3370FF]/5 px-4 py-2.5 dark:bg-[#3370FF]/10">
+      <AskUserBody
+        conversationId={conversationId}
+        questionId={current.id}
+        agentName={agentName}
+        agentId={current.agentId}
+        questions={current.questions}
+        queueSize={pending.length}
+      />
+    </div>
   )
 }
 
@@ -95,22 +82,25 @@ function AskUserBody({
   )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
 
-  // 切换不同 question id 时重置 draft
+  // 切换不同 question id 时重置 draft，并重新展开（新一轮提问别被上一轮的折叠状态藏住）
   useEffect(() => {
     setDraft(initialDraft(questions))
     setError(null)
+    setCollapsed(false)
   }, [questionId, questions])
 
-  const allAnswered = useMemo(
+  const answeredCount = useMemo(
     () =>
-      questions.every((q) => {
-        const a = draft[q.question]
-        if (!a) return false
-        return a.selectedLabels.length > 0 || !!a.freeformNote?.trim()
-      }),
+      questions.filter(
+        (q) =>
+          (draft[q.question]?.selectedLabels.length ?? 0) > 0 ||
+          !!draft[q.question]?.freeformNote?.trim(),
+      ).length,
     [questions, draft],
   )
+  const allAnswered = answeredCount === questions.length
 
   const handleToggleOption = useCallback(
     (q: AskUserQuestionItem, label: string) => {
@@ -181,65 +171,84 @@ function AskUserBody({
   }
 
   return (
-    <>
-      <DialogHeader className="border-b p-4">
-        <DialogTitle className="flex items-center gap-2">
-          {agent ? (
-            <AgentAvatar agent={agent} size="sm" />
-          ) : (
-            <HelpCircle className="size-4 text-[#3370FF]" />
-          )}
-          <span>{agentName} 想确认几件事</span>
-          {queueSize > 1 && (
-            <span className="ml-auto text-xs font-normal text-muted-foreground">
-              还有 {queueSize - 1} 组待答
-            </span>
-          )}
-        </DialogTitle>
-        <DialogDescription>
-          点选项给出选择；勾选「其他」可填自由文本说明。所有问题答完后提交。
-        </DialogDescription>
-      </DialogHeader>
-
-      <ScrollArea className="max-h-[60vh]">
-        <div className="space-y-4 p-4">
-          {questions.map((q, idx) => (
-            <QuestionBlock
-              key={`${q.question}-${idx}`}
-              index={idx + 1}
-              question={q}
-              answer={draft[q.question]}
-              onToggleOption={(label) => handleToggleOption(q, label)}
-              onToggleOther={() => handleToggleOther(q)}
-              onChangeOther={(text) => handleOtherChange(q, text)}
-            />
-          ))}
-        </div>
-      </ScrollArea>
-
-      {error && (
-        <div className="border-t bg-destructive/10 px-4 py-2 text-xs text-destructive">{error}</div>
-      )}
-
-      <DialogFooter className="m-0 flex items-center justify-between gap-2 border-t bg-muted/30 p-3 sm:flex-row">
-        <span className="text-[11px] text-muted-foreground">
-          {allAnswered ? '已答完所有问题' : `${questions.filter((q) => (draft[q.question]?.selectedLabels.length ?? 0) > 0 || !!draft[q.question]?.freeformNote?.trim()).length} / ${questions.length} 已答`}
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        title={collapsed ? '展开回答' : '收起（Agent 会等你，可继续对话）'}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        {agent ? (
+          <AgentAvatar agent={agent} size="sm" />
+        ) : (
+          <HelpCircle className="size-4 shrink-0 text-[#3370FF]" />
+        )}
+        <span className="shrink-0 text-xs font-medium">{agentName} 想确认几件事</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">
+          {questions.length} 题
         </span>
-        <Button
-          size="sm"
-          className="bg-[#3370FF] text-white hover:bg-[#2860e5]"
-          disabled={!allAnswered || busy}
-          onClick={() => void handleSubmit()}
-        >
-          {busy ? (
-            <Loader2 className="mr-1 size-3.5 animate-spin" />
-          ) : (
-            <CheckCheck className="mr-1 size-3.5" />
+        {queueSize > 1 && (
+          <span className="shrink-0 rounded border border-[#3370FF]/30 bg-[#3370FF]/10 px-1 py-0.5 text-[10px] text-[#3370FF]">
+            还有 {queueSize - 1} 组待答
+          </span>
+        )}
+        {collapsed && (
+          <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+            · Agent 正在等回答，点击展开
+          </span>
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span className="inline-flex size-1.5 animate-pulse rounded-full bg-[#3370FF]" />
+          {collapsed ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="mt-2">
+          {/* 原生 overflow 滚动：Base UI ScrollArea 的 viewport 依赖父容器确定高度，
+              max-h 约束下不生效（内容撑开且滚不动），这里必须用原生滚动 */}
+          <div className="max-h-[38vh] space-y-3 overflow-y-auto overscroll-contain px-0.5 py-0.5">
+            {questions.map((q, idx) => (
+              <QuestionBlock
+                key={`${q.question}-${idx}`}
+                index={idx + 1}
+                question={q}
+                answer={draft[q.question]}
+                onToggleOption={(label) => handleToggleOption(q, label)}
+                onToggleOther={() => handleToggleOther(q)}
+                onChangeOther={(text) => handleOtherChange(q, text)}
+              />
+            ))}
+          </div>
+
+          {error && (
+            <div className="mt-2 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+              {error}
+            </div>
           )}
-          提交答案
-        </Button>
-      </DialogFooter>
-    </>
+
+          <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
+            <span className="text-[11px] text-muted-foreground">
+              {allAnswered ? '已答完所有问题' : `${answeredCount} / ${questions.length} 已答`}
+              <span className="ml-2 opacity-80">可先收起卡片继续对话，稍后再答</span>
+            </span>
+            <Button
+              size="sm"
+              className="h-7 bg-[#3370FF] px-2.5 text-white hover:bg-[#2860e5]"
+              disabled={!allAnswered || busy}
+              onClick={() => void handleSubmit()}
+            >
+              {busy ? (
+                <Loader2 className="mr-1 size-3.5 animate-spin" />
+              ) : (
+                <CheckCheck className="mr-1 size-3.5" />
+              )}
+              提交答案
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
