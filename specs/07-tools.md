@@ -547,3 +547,5 @@ AgentHub 额外给 Codex 注入一个 stdio MCP bridge，只暴露 allowlist：`
 - 只向固定 Tavily API 发请求，AgentHub 不直接抓取目标页面；URL 检查拒绝私网、保留地址及混合 DNS 解析。
 - 设置 → 联网工具保存统一 Tavily API Key；服务端环境变量 TAVILY_API_KEY 兜底。缺配置返回明确错误，不假装完成搜索。
 - 查询和目标 URL 会发给 Tavily，可能产生服务商费用。接口契约参考 https://docs.tavily.com/documentation/api-reference/endpoint/search 与 https://docs.tavily.com/documentation/api-reference/endpoint/extract 。
+
+联网设置提供「校验连接」：POST /api/settings/web-tools 使用已生效 Key 发起一次最小结果数搜索，继承 20 秒超时与取消机制。成功仅表示搜索请求通过，不代表正文提取已验证。未保存输入先保存；保存/清除/编辑后旧结果失效。失败显示凭据、限流/额度或网络错误，不回传服务商原始错误；校验可能消耗额度，由用户主动触发。

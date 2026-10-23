@@ -21,3 +21,8 @@ Settings SHALL expose only configuration status and support save, preserve and c
 - **WHEN** settings are requested
 - **THEN** no API key is returned.
 
+### Requirement: Users SHALL explicitly validate saved web credentials
+The settings panel SHALL offer a validation action using the effective saved key and one bounded search request. Saving alone SHALL NOT claim connectivity. Validation SHALL report safe success/failure feedback, warn of quota use and block when edits are unsaved.
+#### Scenario: Provider rejects credentials
+- **WHEN** the validation request receives HTTP 401
+- **THEN** the UI reports invalid credentials without exposing the key or changing saved settings.

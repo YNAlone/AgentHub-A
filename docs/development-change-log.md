@@ -170,3 +170,7 @@
 Implemented web_search/web_fetch via Tavily Search/Extract with shared defaults for Custom, Claude and Codex, including planning and aggregation. Added authenticated masked settings UI/API, environment fallback, cancellation, bounded responses and public-URL checks; no dependencies or schema migration. Synced web-tools capability and detailed tools/adapter/credential specs.
 
 Validation: typecheck and lint passed; unit suite 274 passed, 2 skipped; e2e/web-tools.spec.ts passed (settings save/preserve/clear, masked DTO, anonymous denial). Provider calls mocked; no real Tavily credential or paid live search used. Not deployed to the server.
+
+## 2026-10-23 — Web credential validation
+
+Added explicit saved-configuration validation via one bounded Tavily search request. UI blocks validation for unsaved edits, shows loading/success/failure and quota disclosure; server redacts provider/transport errors and preserves credentials. Typecheck, targeted settings tests (10) and browser settings/authentication flow passed; paid provider response is mocked in automated tests. Live validation remains user-triggered.
