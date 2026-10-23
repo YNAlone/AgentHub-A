@@ -520,3 +520,7 @@ class AgentRegistry {
 - Spec 06：Orchestrator 给子 agent 拼 prompt 时也走 CustomAgentAdapter（Orchestrator 本身也是一个 custom agent）
 - Spec 07：toolNames 引用的工具定义
 - Spec 08：agents.api_key / api_base_url 字段；app_settings 表（全局 key 兜底）
+
+## 共享联网能力
+
+web_search/web_fetch 是全 Agent 默认工具，在规划、执行和聚合阶段均注入。Custom 走 Registry；Claude MCP 与 Codex stdio MCP 转发至共享服务。工具可用性不依赖旧 Agent 保存列表，原生 SDK 工具权限不因此扩大。配置与数据边界见 specs/07-tools.md「共享联网工具」。

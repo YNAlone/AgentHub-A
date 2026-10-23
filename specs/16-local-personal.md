@@ -75,3 +75,7 @@ Memory 字段：`id、scope(personal/project)、projectId、content、sourceConv
 新增表由启动迁移幂等创建，保留原会话、消息和文件，不自动迁移项目归属。`schema.ts` 与启动 DDL 同步。上线前停止旧进程并备份整个应用数据目录（包含 SQLite WAL 和 SDK 目录）；迁移先在副本验证。回退应恢复备份和对应代码，不能只切旧代码后继续写已迁移数据。
 
 验收使用临时 SQLite、假模型及 mock Adapter；覆盖认证/DTO、归属、SDK 键隔离、预算边界、失败压缩、游标恢复、记忆来源/范围/删除/替代。实际 HTTP 与浏览器检查配对、侧栏/管理页、继续任务和 SSE；执行 TypeScript、lint、相关测试与构建。真实服务商模型质量和实际安装包仍需区别记录验证范围。
+
+## 联网工具凭据
+
+GET/PATCH /api/settings/web-tools 复用本机配对认证与同源写保护。凭据存 personal_settings 的 web-tools 行，优先于 TAVILY_API_KEY。读取只返回 provider/configured/source/stored；写入 apiKey 空串或省略保留，null 清除保存值但环境变量仍生效。它与模型供应商 Key 独立，全 Agent 共用；详情见 specs/07-tools.md「共享联网工具」。

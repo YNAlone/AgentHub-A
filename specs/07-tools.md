@@ -536,3 +536,14 @@ AgentHub 额外给 Codex 注入一个 stdio MCP bridge，只暴露 allowlist：`
 - Spec 01：定义了 `Agent.toolNames`（引用本 spec 的工具名；Claude Code / Codex agent 强制 `[]`）
 - Spec 05：定义了 `AdapterInput.toolNames`（同上）；说明 Custom / Claude Code / Codex 路径如何分别使用工具
 - Spec 06：`plan_tasks` 工具是 Orchestrator 三阶段工作流的核心
+
+## 共享联网工具
+
+所有真实 Agent 在普通、规划、聚合运行中默认获得 web_search 与 web_fetch；无需迁移已有 toolNames。Custom 使用 Registry，Claude/Codex 使用 AgentHub MCP 包装同一服务；SDK 原生工具独立存在，Codex 沙箱仍禁用网络。
+
+- web_search 接收 query（1–2000 字符）、可选 maxResults（1–10，默认 5），调用 Tavily Search，返回标题、URL、摘要。
+- web_fetch 接收一个公开 HTTP(S) URL，调用 Tavily Extract 提取正文；不支持登录、浏览器交互、内网或自定义端口。
+- 请求可取消，20 秒超时；响应最多 2 MB，摘要每项 3000 字符、正文 24000 字符，附截断标记、检索时间及 untrusted 标记。页面内容是参考资料，不能作为系统指令。
+- 只向固定 Tavily API 发请求，AgentHub 不直接抓取目标页面；URL 检查拒绝私网、保留地址及混合 DNS 解析。
+- 设置 → 联网工具保存统一 Tavily API Key；服务端环境变量 TAVILY_API_KEY 兜底。缺配置返回明确错误，不假装完成搜索。
+- 查询和目标 URL 会发给 Tavily，可能产生服务商费用。接口契约参考 https://docs.tavily.com/documentation/api-reference/endpoint/search 与 https://docs.tavily.com/documentation/api-reference/endpoint/extract 。

@@ -321,3 +321,5 @@ Codex adapter 额外约束：运行时 `CODEX_HOME` / `CODEX_SQLITE_HOME` 指向
 - specs 与代码冲突时，**以 spec 为准**，先改代码或改 spec（选你认为对的，但要写明）
 - 修改架构原则（§3）或安全约束（§5）必须经过讨论，不可单方面提交
 - 本文档与 specs 不堆砌历史决策记录，过时内容直接删除（git log 是历史的归宿）
+
+联网工具或联网凭据变更时，读 specs/07-tools.md「共享联网工具」与 specs/16-local-personal.md「联网工具凭据」；web_search/web_fetch 在运行时统一注入所有真实 Agent，独立于模型 Key。

@@ -164,3 +164,9 @@
 - 将 127.0.0.1 加入 allowedDevOrigins，允许浏览器通过本机 SSH 转发端口连接远程 Next.js 开发资源；不使用通配来源。
 - 服务器原配置仅允许公网地址，日志记录回环来源的 HMR 请求被拦截；修改配置触发开发服务器重启后，客户端初始化和按钮交互恢复。
 - 通过真实 SSH 隧道验证 Agents 面板、创建 Agent 弹窗、新建对话弹窗均可打开，未捕获 pageerror；没有创建或修改业务数据。
+
+## 2026-10-23 — Universal web tools
+
+Implemented web_search/web_fetch via Tavily Search/Extract with shared defaults for Custom, Claude and Codex, including planning and aggregation. Added authenticated masked settings UI/API, environment fallback, cancellation, bounded responses and public-URL checks; no dependencies or schema migration. Synced web-tools capability and detailed tools/adapter/credential specs.
+
+Validation: typecheck and lint passed; unit suite 274 passed, 2 skipped; e2e/web-tools.spec.ts passed (settings save/preserve/clear, masked DTO, anonymous denial). Provider calls mocked; no real Tavily credential or paid live search used. Not deployed to the server.
