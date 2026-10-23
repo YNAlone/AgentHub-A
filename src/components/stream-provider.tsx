@@ -55,6 +55,9 @@ export function StreamProvider({ children }: { children: React.ReactNode }) {
           if (!restoredUi && snapshot.uiState) {
             const ui = snapshot.uiState
             const ids = new Set(snapshot.conversations.map((c) => c.id))
+            // A slow first snapshot must not undo a conversation the user already selected to resume.
+            const selected = useAppStore.getState().activeConversationId
+            if (selected && ids.has(selected)) ui.activeConversationId = selected
             ui.openFilesByConv = Object.fromEntries(Object.entries(ui.openFilesByConv).filter(([id]) => ids.has(id)).map(([id, files]) => [id, files.filter((file) => !file.startsWith('diff:'))]))
             ui.activeTabByConv = Object.fromEntries(Object.entries(ui.activeTabByConv).filter(([id]) => ids.has(id)).map(([id, tab]) => [id, tab.startsWith('diff:') ? 'chat' : tab]))
             useAppStore.setState(ui)
