@@ -174,3 +174,7 @@ Validation: typecheck and lint passed; unit suite 274 passed, 2 skipped; e2e/web
 ## 2026-10-23 — Web credential validation
 
 Added explicit saved-configuration validation via one bounded Tavily search request. UI blocks validation for unsaved edits, shows loading/success/failure and quota disclosure; server redacts provider/transport errors and preserves credentials. Typecheck, targeted settings tests (10) and browser settings/authentication flow passed; paid provider response is mocked in automated tests. Live validation remains user-triggered.
+
+## 2026-10-23 — Tavily nullable search fields
+
+Server reproduction found a successful provider response rejected because raw_content was null. Accept nullable optional result fields while retaining required URL validation and existing output fallbacks. A regression fixture reproduced the ZodError before the fix; 33 web service/settings tests pass after the fix.
