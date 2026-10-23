@@ -15,7 +15,8 @@ sqlite.exec('CREATE TABLE IF NOT EXISTS personal_settings (id TEXT PRIMARY KEY, 
 /** Hash endpoint identity so calibration rows never persist URL credentials or API keys. */
 function rowId(provider: ModelProvider, modelId: string, apiBaseUrl: string | null): string {
   const fingerprint = createHash('sha256').update(JSON.stringify([provider, modelId, apiBaseUrl])).digest('hex')
-  return `context-calibration:${fingerprint}`
+  // Byte-based observations cannot calibrate the new language-aware estimator.
+  return `context-calibration:v2:${fingerprint}`
 }
 
 function readRecord(id: string): CalibrationRecord {

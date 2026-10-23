@@ -19,6 +19,7 @@ import {
  */
 
 export interface BuildHistoryOptions {
+  onPinnedMessages?: (messages: ChatCompletionMessageParam[]) => void
   /** 默认保留全部未被摘要覆盖的消息，避免静默丢失历史。 */
   maxTurns?: number
   /** 是否注入 pinned messages。默认 true。 */
@@ -30,7 +31,7 @@ export interface BuildHistoryOptions {
    * undefined 不检查预算；指定预算时摘要和 pinned 一并计入，超出则抛错。
    */
   tokenBudget?: number
-  /** Calibrated request-class multiplier; defaults to the cold-start UTF-8 byte count. */
+  /** Calibrated request-class multiplier; defaults to the language-aware estimate. */
   estimateFactor?: number
 }
 
@@ -152,6 +153,7 @@ export async function buildHistoryFor(
   const out: ChatCompletionMessageParam[] = []
   for (const it of items) {
     if (it.tokens < 0) continue
+    if (it.isPinned) options.onPinnedMessages?.(it.serialized)
     out.push(...it.serialized)
   }
   return out

@@ -8,6 +8,7 @@ import { MockAdapter } from './mock-adapter'
 import type { AgentPlatformAdapter } from './types'
 import { acquireSession } from './session-lock'
 import { prepareSession } from './session-store'
+import { sdkWorkingContext } from './sdk-working-context'
 
 /**
  * AgentRegistry — 根据 Agent.adapterName 路由到对应实现。
@@ -24,7 +25,8 @@ class AgentRegistry {
         const release = await acquireSession(`${adapter.name}:${input.conversationId}:${input.agentId}`, signal)
         try {
           prepareSession(adapter.name, input)
-          yield* adapter.stream(input, signal)
+          if (adapter.name === 'codex' || adapter.name === 'claude-code') yield* sdkWorkingContext(adapter, input, signal)
+          else yield* adapter.stream(input, signal)
         } finally { release() }
       },
     })

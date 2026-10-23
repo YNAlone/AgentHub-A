@@ -2,6 +2,8 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 
 import type { AdapterName, ModelProvider, StreamEvent } from '@/shared/types'
 import type { ContextBudget } from '@/server/context-budget'
+import type { ContextCheckpoint } from '@/server/context-checkpoints'
+import type { ContextProgress, Summarize } from '@/server/working-context'
 
 /**
  * AgentPlatformAdapter — 屏蔽不同 Agent 平台（Claude Code / Codex / Custom / Mock）
@@ -61,6 +63,15 @@ export interface AdapterInput {
   contextState?: { memoryBlock: string; projectId: string | null; summaryId: string | null }
   /** Complete-request limits calculated once by AgentRunner and rechecked by custom tool turns. */
   contextBudget?: ContextBudget
+  /** Application-owned checkpoint IO keeps credentials out of durable adapter state. */
+  contextControl?: {
+    restored: ContextCheckpoint | null
+    save: (checkpoint: ContextCheckpoint) => void
+    summarize: Summarize
+    summaryChunkTokens?: number
+    protectedMessageKeys?: string[]
+    progress: (progress: ContextProgress) => void
+  }
   /** Numeric-only request usage callback supplied by AgentRunner for model-specific calibration. */
   onContextUsage?: (rawEstimate: number, actualInputTokens: number, hasToolResult: boolean) => void
 

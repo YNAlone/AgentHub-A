@@ -1,7 +1,7 @@
 'use client'
 
 import { Archive, Coins } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { compactConversation } from '@/lib/api'
@@ -22,11 +22,25 @@ export function UsageBadge({ conversationId }: { conversationId: string }) {
   const agents = useAppStore((s) => s.agents)
   const upsertMessage = useAppStore((s) => s.upsertMessage)
   const [compacting, setCompacting] = useState(false)
+  const [configuredWindow, setConfiguredWindow] = useState<{ agentId: string; model: string; value: number } | null>(null)
+  useEffect(() => {
+    if (!total.lastAgentId) return
+    const controller = new AbortController()
+    // The server resolves the effective endpoint and user overrides; the saved Agent URL may be ignored by its provider.
+    fetch('/api/settings/context-capacity', { signal: controller.signal }).then(async (response) => {
+      if (!response.ok) return
+      const data = await response.json()
+      const profile = data.profiles.find((row: { agentId: string; model: string }) => row.agentId === total.lastAgentId && (!total.lastModelId || row.model === total.lastModelId))
+      if (profile) setConfiguredWindow({ agentId: profile.agentId, model: profile.model, value: profile.contextWindow })
+    }).catch(() => {})
+    return () => controller.abort()
+  }, [total.lastAgentId, total.lastModelId, total.runCount])
 
   if (total.runCount === 0) return null
 
   // Group conversations show the model that produced the measured prompt, not another agent's larger window.
   const contextWindow = (() => {
+    if (configuredWindow?.agentId === total.lastAgentId && (!total.lastModelId || configuredWindow.model === total.lastModelId)) return configuredWindow.value
     const agent = total.lastAgentId ? agents[total.lastAgentId] : null
     return agent ? getModelLimits(agent.modelProvider, total.lastModelId ?? agent.modelId, agent.apiBaseUrl).contextWindow : 0
   })()

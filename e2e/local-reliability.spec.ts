@@ -28,10 +28,10 @@ test('创建项目后可维护多段对话并查看长期记忆开关', async ({
   await expect(page.getByRole('checkbox', { name: '允许后台提取记忆' })).not.toBeChecked()
   await expect(page.getByRole('button', { name: '保存设置', exact: true })).toBeVisible()
   // Persist operational limits through the same local settings API used by real runs.
-  await page.getByRole('combobox', { name: '单次输入运行上限' }).selectOption('1000000')
+  await page.getByRole('combobox', { name: '自动压缩触发阈值' }).selectOption('0.6')
   await page.getByRole('combobox', { name: '单次输出上限' }).selectOption('8192')
   await page.getByRole('button', { name: '保存设置', exact: true }).click()
-  await expect.poll(async () => (await (await request.get('/api/personal/settings')).json()).settings.contextInputLimitTokens).toBe(1_000_000)
+  await expect.poll(async () => (await (await request.get('/api/personal/settings')).json()).settings.contextTriggerRatio).toBe(0.6)
   await expect.poll(async () => (await (await request.get('/api/personal/settings')).json()).settings.contextOutputLimitTokens).toBe(8192)
 })
 

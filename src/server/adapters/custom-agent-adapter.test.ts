@@ -34,18 +34,22 @@ it('checks the next complete request after a large tool result without replaying
     { role: 'user', content: baseInput.prompt },
   ], tools)
   const onContextUsage = vi.fn()
-  const input = { ...baseInput, onContextUsage, contextBudget: { contextWindow: 100_000, maxOutputTokens: 1024, maxInputTokens: firstRequest + 1000, safetyTokens: 8192, plainFactor: 1, toolFactor: 1 } }
+  const summarize = vi.fn(async () => '已读取文件 x；原文保存在工具结果中。')
+  const input = { ...baseInput, onContextUsage, contextControl: { restored: null, save: vi.fn(), progress: vi.fn(), summarize },
+    contextBudget: { contextWindow: 100_000, maxOutputTokens: 1024, maxInputTokens: firstRequest * 4 + 1000, safetyTokens: 8192, plainFactor: 1, toolFactor: 1 } }
   model.create.mockResolvedValueOnce((async function* () {
     yield { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-1', function: { name: 'fs_read', arguments: '{"path":"x"}' } }] }, finish_reason: 'tool_calls' }] }
     yield { choices: [], usage: { prompt_tokens: 100, completion_tokens: 20 } }
   })())
 
-  const events: StreamEvent[] = []
-  await expect((async () => {
-    for await (const event of new CustomAgentAdapter().stream(input, new AbortController().signal)) events.push(event)
-  })()).rejects.toThrow('上下文超出输入预算')
+  model.create.mockResolvedValueOnce((async function* () {
+    yield { choices: [{ delta: { content: '完成' }, finish_reason: 'stop' }] }
+  })())
+  const events = await consume(input)
 
-  expect(model.create).toHaveBeenCalledTimes(1)
+  expect(model.create).toHaveBeenCalledTimes(2)
+  expect(summarize).toHaveBeenCalled()
+  expect(JSON.stringify(model.create.mock.calls[1][0].messages)).toContain('working_context_summary')
   expect(model.create.mock.calls[0][0].max_tokens).toBe(1024)
   expect(execute).toHaveBeenCalledTimes(1)
   expect(onContextUsage).toHaveBeenCalledWith(firstRequest, 100, false)
@@ -64,4 +68,26 @@ it('reports length-limited model output as incomplete', async () => {
     expect.objectContaining({ function: expect.objectContaining({ name: 'web_search' }) }),
     expect.objectContaining({ function: expect.objectContaining({ name: 'web_fetch' }) }),
   ]))
+})
+
+it('recovers a real provider overflow by compacting and retrying the same request', async () => {
+  const summarize = vi.fn(async () => '历史已检索，继续回答。')
+  model.create.mockRejectedValueOnce({ status: 400, code: 'context_length_exceeded' })
+  model.create.mockResolvedValueOnce((async function* () {
+    yield { choices: [{ delta: { content: 'recovered' }, finish_reason: 'stop' }] }
+  })())
+  const result = await consume({ ...baseInput, history: [{ role: 'assistant', content: 'historical evidence '.repeat(150) }],
+    contextBudget: { contextWindow: 100000, maxInputTokens: 80000, maxOutputTokens: 8192, safetyTokens: 2000, plainFactor: 1, toolFactor: 1 },
+    contextControl: { restored: null, save: vi.fn(), progress: vi.fn(), summarize, summaryChunkTokens: 12000 } })
+  expect(summarize).toHaveBeenCalledTimes(1)
+  expect(model.create).toHaveBeenCalledTimes(2)
+  expect(result.some((event) => event.type === 'part.delta' && event.delta.type === 'text.append' && event.delta.text === 'recovered')).toBe(true)
+})
+
+it('does not classify authentication failures as context overflow', async () => {
+  const summarize = vi.fn(async () => 'must not run')
+  model.create.mockRejectedValueOnce(Object.assign(new Error('invalid API key'), { status: 401 }))
+  await expect(consume({ ...baseInput, contextControl: { restored: null, save: vi.fn(), progress: vi.fn(), summarize } })).rejects.toThrow('invalid API key')
+  expect(summarize).not.toHaveBeenCalled()
+  expect(model.create).toHaveBeenCalledTimes(1)
 })

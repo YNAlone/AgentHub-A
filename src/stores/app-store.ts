@@ -597,6 +597,11 @@ export const useAppStore = create<AppState>()(
             return
           }
 
+          case 'run.context': {
+            const run = s.runsByConv[event.conversationId]?.[event.runId]
+            if (run) { run.status = event.state; run.error = event.message }
+            return
+          }
           case 'run.end': {
             const run = s.runsByConv[event.conversationId]?.[event.runId]
             if (run) {
@@ -1142,7 +1147,7 @@ export const useTopLevelRunningRuns = (conversationId: string) =>
     useShallow((s) => {
       const runs = s.runsByConv[conversationId]
       if (!runs) return []
-      return Object.values(runs).filter((r) => r.status === 'running' && !r.parentRunId)
+      return Object.values(runs).filter((r) => ['running', 'compacting'].includes(r.status) && !r.parentRunId)
     }),
   )
 

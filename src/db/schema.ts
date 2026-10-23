@@ -195,8 +195,8 @@ export const agentRuns = sqliteTable(
       .references(() => agents.id),
     triggerMessageId: text('trigger_message_id'),
 
-    // Interrupted runs require a new explicit continuation; old approvals remain invalid.
-    status: text('status', { enum: ['queued', 'running', 'complete', 'failed', 'aborted', 'interrupted'] }).notNull(),
+    // Paused runs resume from durable checkpoints; old approvals remain invalid after restart.
+    status: text('status', { enum: ['queued', 'running', 'compacting', 'paused', 'complete', 'failed', 'aborted', 'interrupted'] }).notNull(),
     error: text('error'),
 
     parentRunId: text('parent_run_id'),
@@ -211,6 +211,16 @@ export const agentRuns = sqliteTable(
 )
 
 /** RunUsage —— 一次 run 累计的 token 用量。所有字段 0+ 整数；不返回的字段 0 不是 null（聚合好处理）。 */
+export const runContextCheckpoints = sqliteTable('run_context_checkpoints', {
+  runId: text('run_id').notNull(), stage: text('stage').notNull(), revision: integer('revision').notNull().default(0),
+  value: text('value').notNull(), updatedAt: integer('updated_at').notNull(),
+}, (t) => [primaryKey({ columns: [t.runId, t.stage] })])
+
+// The workflow journal also keeps completed tool evidence across application restarts.
+export const runWorkflowJournal = sqliteTable('run_workflow_journal', {
+  runId: text('run_id').notNull(), step: text('step').notNull(), value: text('value').notNull(),
+}, (t) => [primaryKey({ columns: [t.runId, t.step] })])
+
 export interface RunUsage {
   inputTokens: number
   outputTokens: number

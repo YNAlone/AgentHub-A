@@ -137,6 +137,19 @@ const DDL: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_runs_parent ON agent_runs(parent_run_id)`,
 
+  // Journals are written before asynchronous run insertion; cleanup follows run deletion instead of a FK.
+  `CREATE TABLE IF NOT EXISTS run_context_checkpoints (
+    run_id TEXT NOT NULL, stage TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0,
+    value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(run_id, stage)
+  )`,
+  `CREATE TABLE IF NOT EXISTS run_workflow_journal (
+    run_id TEXT NOT NULL, step TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(run_id, step)
+  )`,
+  `CREATE TRIGGER IF NOT EXISTS delete_run_context AFTER DELETE ON agent_runs BEGIN
+    DELETE FROM run_context_checkpoints WHERE run_id=old.id;
+    DELETE FROM run_workflow_journal WHERE run_id=old.id;
+  END`,
+
   // ─── conversation_context_summaries ─────────────────────────
   `CREATE TABLE IF NOT EXISTS conversation_context_summaries (
     id TEXT PRIMARY KEY,

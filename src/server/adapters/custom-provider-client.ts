@@ -7,6 +7,14 @@ import type { ModelProvider } from '@/shared/types'
 const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1'
 const DEFAULT_VOLCANO_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
+/** Match capacity and summarization identity to the URL actually used by named-provider clients. */
+export function effectiveCustomEndpoint(provider: ModelProvider | null, configured?: string | null): string | null {
+  if (provider === 'deepseek') return DEFAULT_DEEPSEEK_BASE_URL
+  if (provider === 'volcano-ark') return DEFAULT_VOLCANO_ARK_BASE_URL
+  if (provider === 'openai') return process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1'
+  return configured?.trim() || null
+}
+
 export interface CustomProviderClientConfig {
   apiKey: string
   baseURL?: string

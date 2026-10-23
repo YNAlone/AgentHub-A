@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { useAppStore, useConversationList, useAgentList } from '@/stores/app-store'
 import type { Project } from '@/server/project-service'
 import type { Memory } from '@/server/memory-service'
+import { ContextCapacitySettings } from './context-capacity-settings'
 import type { PersonalSettingsValue } from '@/server/personal-settings'
 import type { MessageRow } from '@/db/schema'
 
@@ -99,8 +100,9 @@ export function PersonalPanel() {
         {tab === 'context' && capabilities && <section aria-label="上下文与后台提取" className={styles.section}>
           <form onSubmit={(e) => { e.preventDefault(); void action(() => api('/api/personal/settings', 'PATCH', capabilities.settings)) }}>
             <h2 className={styles.groupTitle}>历史与记忆</h2>
-            <ToggleRow title="自动压缩上下文" description="接近模型上限时整理历史，完整原始消息始终保留。" checked={capabilities.settings.automaticCompaction} onChange={(value) => setSetting('automaticCompaction', value)} />
-            <label className={styles.settingRow}><span><strong>单次输入运行上限</strong><small>默认 128K；选择 1M 只对已核实支持的模型有效，实际可用量还会扣除输出和安全余量。SDK Agent 的内部上下文由其 SDK 管理。</small></span><select aria-label="单次输入运行上限" value={capabilities.settings.contextInputLimitTokens} onChange={(e) => setSetting('contextInputLimitTokens', Number(e.target.value))}><option value={128000}>128K · 默认</option><option value={256000}>256K</option><option value={512000}>512K</option><option value={1000000}>1M</option></select></label>
+            <p className="text-sm text-muted-foreground">自动压缩已启用：超过阈值先整理上下文再继续，摘要失败自动重试两次，仍失败则暂停并保存现场。完整原始消息保留。</p>
+            <label className={styles.settingRow}><span><strong>自动压缩触发阈值</strong><small>按扣除输出和 2% 安全余量后的可用输入容量计算。</small></span><select aria-label="自动压缩触发阈值" value={capabilities.settings.contextTriggerRatio} onChange={(e) => setSetting('contextTriggerRatio', Number(e.target.value))}><option value={0.4}>40%</option><option value={0.6}>60% · 默认</option><option value={0.8}>80%</option><option value={0.9}>90%</option></select></label>
+            <p className="text-xs text-muted-foreground">压缩后目标：可用输入的 35% 以下。旧输入上限 {capabilities.settings.contextInputLimitTokens.toLocaleString()} 仅作迁移记录，不再硬拦截。</p>
             <label className={styles.settingRow}><span><strong>单次输出上限</strong><small>自定义模型适用，包含思考 token；发送的 max_tokens 与预留值相同。Claude/Codex SDK 自行管理输出。</small></span><select aria-label="单次输出上限" value={capabilities.settings.contextOutputLimitTokens ?? 'auto'} onChange={(e) => setSetting('contextOutputLimitTokens', e.target.value === 'auto' ? null : Number(e.target.value))}><option value="auto">模型默认</option><option value={4096}>4K</option><option value={8192}>8K</option><option value={16384}>16K</option><option value={65536}>64K</option><option value={131072}>128K</option><option value={393216}>384K</option></select></label>
             <ToggleRow title="允许后台提取记忆" description="从已完成的对话中提取偏好与项目经验。" checked={capabilities.settings.memoryEnabled} onChange={(value) => setSetting('memoryEnabled', value)} />
             <ToggleRow title="使用已生效的记忆" description="在新请求中加入相关记忆，让对话保持连续。" checked={capabilities.settings.memoryUseEnabled} onChange={(value) => setSetting('memoryUseEnabled', value)} />
@@ -111,6 +113,7 @@ export function PersonalPanel() {
             {/* Base UI buttons default to non-submit behavior; this form must submit its edited limits. */}
             <div className={styles.saveBar}><p>保存时会重试失败的提取任务。</p><Button type="submit" disabled={busy}>{busy ? '正在保存…' : '保存设置'}<Check size={14} /></Button></div>
           </form>
+          <ContextCapacitySettings triggerRatio={capabilities.settings.contextTriggerRatio} outputLimitTokens={capabilities.settings.contextOutputLimitTokens} />
           <details className={styles.details}><summary>辅助模型用量与提取状态 <span>{capabilities.jobs.length} 个任务</span></summary><div className={styles.usage}>{!capabilities.usage.length && !capabilities.jobs.length && <p>尚无用量记录。后台提取开始后，消耗和任务状态会显示在这里。</p>}{capabilities.usage.map((u) => <div key={u.model}><strong>{u.model}</strong><span>{u.requests} 次请求 · 输入 {u.inputTokens.toLocaleString()} / 输出 {u.outputTokens.toLocaleString()} tokens</span></div>)}{capabilities.jobs.map((job) => <div key={job.conversationId}><strong>{conversations.find((c) => c.id === job.conversationId)?.title ?? job.conversationId}</strong><span>{{ pending: '等待提取', running: '正在提取', complete: '已完成', failed: '提取失败' }[job.status] ?? job.status}{job.error && ` · ${job.error}`}</span></div>)}</div></details>
         </section>}
       </div>

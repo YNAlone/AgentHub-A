@@ -80,6 +80,11 @@ export class CodexAdapter implements AgentPlatformAdapter {
       baseUrl: input.apiBaseUrl ?? undefined,
       env: codexEnv,
       config: {
+        // Native SDK compaction covers internal turns that the streaming API does not expose.
+        ...(input.contextBudget ? {
+          model_context_window: input.contextBudget.contextWindow,
+          model_auto_compact_token_limit: Math.floor(input.contextBudget.maxInputTokens * (input.contextBudget.triggerRatio ?? 0.6)),
+        } : {}),
         developer_instructions: buildCodexDeveloperInstructions(input.systemPrompt, isPlanStage),
         mcp_servers: {
           agenthub: {

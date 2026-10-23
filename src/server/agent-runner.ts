@@ -1,13 +1,19 @@
 import { withWebTools } from '@/shared/web-tools'
+import { newMessageId } from './ids'
+import { contextStage, readCheckpoint, writeCheckpoint, readJournal, writeJournal } from './context-checkpoints'
+import { ContextPausedError, workingMessageKey } from './working-context'
+import { resolveContextCapacity } from './context-capacity'
+import { effectiveCustomEndpoint } from './adapters/custom-provider-client'
+import { summarizeWorkingText, workingSummaryChunkTokens } from './context-compaction-service'
+import { buildHistoryFor } from './conversation-context'
 import { projects, recallMemoryBlock } from './personal-runtime'
-import { buildAutomaticHistory } from './automatic-context'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 
 import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
-import { db, schema } from '@/db/client'
+import { db, schema, sqlite } from '@/db/client'
 import type { AgentRow, ArtifactRow, MessageRow, WorkspaceRow } from '@/db/schema'
 import type {
   ArtifactContent,
@@ -20,7 +26,7 @@ import type {
   StreamEvent,
   TaskResultReport,
 } from '@/shared/types'
-import { getModelLimits } from '@/shared/model-registry'
+
 
 import { agentRegistry } from './adapters/registry'
 import type { AdapterAttachment, AdapterInput } from './adapters/types'
@@ -60,10 +66,9 @@ import { newArtifactId, newRunId } from './ids'
 import { pendingDispatchPlans, type PlanReviewOutcome } from './pending-dispatch-plans'
 import { buildProjectFiles } from './project-artifact'
 import { getAppSettings } from './settings-service'
-import { createContextBudget, estimateRequestTokens, toApiTool } from './context-budget'
+import { createContextBudget } from './context-budget'
 import { getContextCalibration, recordContextSample } from './context-calibration'
 import { getPersonalSettings } from './personal-settings'
-import { toolRegistry } from './tools/registry'
 import {
   evaluateTaskResultReport,
   isTaskResultReportToolName,
@@ -102,7 +107,7 @@ export interface RunArgs {
 
 export interface RunResult {
   runId: string
-  status: 'complete' | 'failed' | 'aborted'
+  status: 'complete' | 'failed' | 'aborted' | 'paused'
   error?: string
   artifactIds: string[]
   outputMessageIds: string[]
@@ -232,6 +237,7 @@ const DEFAULT_VERIFICATION_TIMEOUT_MS = 5 * 60_000
 const DEFAULT_PREPARE_TIMEOUT_MS = 10 * 60_000
 
 const activeRuns = new Map<string, AbortController>()
+const runPromises = new Map<string, Promise<RunResult>>()
 const subAgentRunSemaphore = new Semaphore(MAX_CONCURRENT_SUB_AGENT_RUNS)
 
 function emptyRunExecutionResult(): RunExecutionResult {
@@ -239,8 +245,11 @@ function emptyRunExecutionResult(): RunExecutionResult {
 }
 
 export const AgentRunner = {
-  run(args: RunArgs): { runId: string; promise: Promise<RunResult> } {
-    const runId = newRunId()
+  run(args: RunArgs, resumeId?: string): { runId: string; promise: Promise<RunResult> } {
+    const runId = resumeId ?? newRunId()
+    const { parentSignal: _signal, ...savedArgs } = args
+    void _signal
+    writeJournal(runId, 'args', savedArgs)
     const controller = new AbortController()
 
     // 级联：父 run abort 时子 run 也 abort
@@ -256,7 +265,9 @@ export const AgentRunner = {
 
     const promise = executeRun(runId, controller.signal, args).finally(() => {
       activeRuns.delete(runId)
+      runPromises.delete(runId)
     })
+    runPromises.set(runId, promise)
 
     promise.catch((err) => {
       console.error('[AgentRunner] uncaught error', err)
@@ -265,12 +276,52 @@ export const AgentRunner = {
     return { runId, promise }
   },
 
+  resume(runId: string, parentSignal?: AbortSignal): { runId: string; promise: Promise<RunResult> } | null {
+    if (activeRuns.has(runId)) {
+      if (parentSignal?.aborted) activeRuns.get(runId)!.abort()
+      else parentSignal?.addEventListener('abort', () => activeRuns.get(runId)?.abort(), { once: true })
+      return { runId, promise: runPromises.get(runId)! }
+    }
+    const args = readJournal<RunArgs>(runId, 'args')
+    if (!args) throw new Error('没有可恢复的任务检查点。')
+    const claim = sqlite.prepare("UPDATE agent_runs SET status='running',error=NULL,finished_at=NULL WHERE id=? AND status IN ('paused','interrupted')").run(runId)
+    if (!claim.changes) return null
+    return this.run({ ...args, parentSignal }, runId)
+  },
+
   abort(runId: string): boolean {
     const ac = activeRuns.get(runId)
-    if (!ac) return false
+    if (!ac) {
+      const row = sqlite.prepare("UPDATE agent_runs SET status='aborted',finished_at=? WHERE id=? AND status IN ('paused','interrupted') RETURNING conversation_id").get(Date.now(), runId) as { conversation_id: string } | undefined
+      if (!row) return false
+      // A paused parent owns its unfinished descendants even when their controllers no longer exist.
+      const children = sqlite.prepare('SELECT id FROM agent_runs WHERE parent_run_id=?').all(runId) as { id: string }[]
+      for (const child of children) this.abort(child.id)
+      publish({ type: 'run.end', conversationId: row.conversation_id, timestamp: Date.now(), runId, status: 'aborted' })
+      return true
+    }
     ac.abort()
     return true
   },
+}
+
+/** Replay completed workflow stages as data, never by re-executing their model or tool calls. */
+async function workflowStep<T>(runId: string, key: string, work: () => Promise<T>): Promise<T> {
+  const saved = readJournal<{ result: T }>(runId, key)
+  if (saved) return saved.result
+  const result = await work()
+  writeJournal(runId, key, { result })
+  return result
+}
+function runPlanStage(...args: Parameters<typeof runPlanStageImpl>): ReturnType<typeof runPlanStageImpl> {
+  const key = 'plan:' + contextStage(args[4] + (args[8] ?? ''), '', [])
+  return workflowStep(args[2], key, () => runPlanStageImpl(...args))
+}
+function waitForDispatchPlanReview(args: Parameters<typeof waitForDispatchPlanReviewImpl>[0]): ReturnType<typeof waitForDispatchPlanReviewImpl> {
+  return workflowStep(args.runId, 'review:' + contextStage(JSON.stringify(args.plan), '', []), () => waitForDispatchPlanReviewImpl(args))
+}
+function runChildTask(...args: Parameters<typeof runChildTaskImpl>): ReturnType<typeof runChildTaskImpl> {
+  return workflowStep(args[3].parentRunId, 'child:' + contextStage(JSON.stringify(args[0]), JSON.stringify([...args[1]]), []), () => runChildTaskImpl(...args))
 }
 
 // ─── 主入口 ────────────────────────────────────────────────
@@ -343,6 +394,11 @@ async function executeRun(runId: string, signal: AbortSignal, args: RunArgs): Pr
   } catch (err) {
     if (signal.aborted) {
       return finalize(runId, args, 'aborted', emptyRunExecutionResult())
+    }
+    if (err instanceof ContextPausedError) {
+      await db.update(schema.agentRuns).set({ status: 'paused', error: err.message, finishedAt: null }).where(eq(schema.agentRuns.id, runId))
+      publish({ type: 'run.context', conversationId: args.conversationId, timestamp: Date.now(), runId, state: 'paused', message: err.message })
+      return { runId, status: 'paused', error: err.message, ...emptyRunExecutionResult() }
     }
     const msg = err instanceof Error ? err.message : String(err)
     return finalize(runId, args, 'failed', emptyRunExecutionResult(), msg)
@@ -558,13 +614,13 @@ async function executeOrchestratorRun(
 
   // ─── Stage 3: AGGREGATE ────────────────────────────────
   const aggregateSystemPrompt = buildOrchestratorAggregatePrompt(agent.systemPrompt)
-  const aggregateUserPrompt = await buildAggregatePrompt(
+  const aggregateUserPrompt = await workflowStep(runId, 'aggregate-prompt', () => buildAggregatePrompt(
     userPrompt,
     [...planItemsById.values()],
     mergedResults,
     lastConflicts,
     workspace,
-  )
+  ))
   // Aggregate 阶段不再带 plan_tasks / ask_user，避免重复拆解或在最终总结前再次打断用户。
   const aggregateToolNames = agent.toolNames.filter(
     (n) => n !== 'plan_tasks' && n !== ASK_USER_TOOL_NAME,
@@ -587,7 +643,7 @@ async function executeOrchestratorRun(
       signal,
     )
 
-  const aggRun = await consumeStream(aggStream, agent.id, runId)
+  const aggRun = await consumeStream(aggStream, agent.id, runId, undefined, 'aggregate')
   allArtifactIds.push(...aggRun.artifactIds)
   allOutputMessageIds.push(...aggRun.outputMessageIds)
   Object.assign(allOutputArtifacts, aggRun.outputArtifacts)
@@ -600,7 +656,7 @@ async function executeOrchestratorRun(
 }
 
 // ─── PLAN 阶段（首轮 + 补救轮共用）──────────────────────────
-async function runPlanStage(
+async function runPlanStageImpl(
   args: RunArgs,
   agent: AgentRow,
   runId: string,
@@ -643,7 +699,7 @@ async function runPlanStage(
         result: { acknowledged: true, taskCount: plan.length },
       }
     }
-  })
+  }, 'plan:' + contextStage(effectivePrompt, '', []))
   const raw = planRef.value
   const plan = raw
     ? compileAndValidateDispatchPlan(raw, otherAgents, agent.id, resolvedExternalTasks)
@@ -690,7 +746,7 @@ function compileAndValidateDispatchPlan(
   return plan
 }
 
-async function waitForDispatchPlanReview(args: {
+async function waitForDispatchPlanReviewImpl(args: {
   conversationId: string
   agentId: string
   runId: string
@@ -843,7 +899,7 @@ function mergeFileWrites(runIds: string[]): Map<string, string> {
   return merged
 }
 
-async function runChildTask(
+async function runChildTaskImpl(
   task: DispatchPlanItem,
   upstream: Map<string, DispatchTaskResult>,
   plan: DispatchPlanItem[],
@@ -869,14 +925,14 @@ async function runChildTask(
   }
 
   try {
-    const basePrompt = await buildSubAgentPrompt(
+    const basePrompt = await workflowStep(ctx.parentRunId, 'child-prompt:' + contextStage(JSON.stringify(task), JSON.stringify([...upstream]), []), () => buildSubAgentPrompt(
       task,
       upstream,
       ctx.conversationId,
       plan,
       resolvedInputs,
       ctx.workspace,
-    )
+    ))
 
     let continuationContext: string | null = null
     let lastEvaluation: ChildAttemptEvaluation | null = null
@@ -1035,7 +1091,13 @@ async function runChildTaskAttempt(
   prompt: string,
   ctx: DagContext,
 ): Promise<ChildAttemptEvaluation> {
-  const { runId: childRunId, promise } = AgentRunner.run({
+  const step = 'attempt:' + contextStage(prompt, task.agentId, [])
+  const cached = readJournal<ChildAttemptEvaluation>(ctx.parentRunId, step + ':result')
+  if (cached) return cached
+  const previousId = readJournal<string>(ctx.parentRunId, step)
+  const resumed = previousId ? AgentRunner.resume(previousId, ctx.signal) : null
+  if (previousId && !resumed) throw new ContextPausedError('子任务现场需要核对，未自动重复执行。')
+  const { runId: childRunId, promise } = resumed ?? AgentRunner.run({
     agentId: task.agentId,
     conversationId: ctx.conversationId,
     triggerMessageId: ctx.triggerMessageId,
@@ -1044,6 +1106,7 @@ async function runChildTaskAttempt(
     requireTaskReport: true,
     parentSignal: ctx.signal,
   })
+  writeJournal(ctx.parentRunId, step, childRunId)
 
   publish({
     type: 'dispatch.start',
@@ -1056,13 +1119,17 @@ async function runChildTaskAttempt(
   })
 
   const raw = await promise
+  if (raw.status === 'paused') throw new ContextPausedError(`子任务 ${childRunId} 已暂停：${raw.error ?? '请重试摘要'}`)
   const verificationResults =
     raw.status === 'aborted'
       ? []
       : await runRequiredCommands(task, childRunId, ctx)
   const evidence = getRunToolEvidence(childRunId)
-  const result = evaluateChildTaskResult(task, raw, evidence)
-  return { rawResult: raw, result, evidence, verificationResults }
+  const completedRaw: DispatchTaskResult = { ...raw, status: raw.status }
+  const result = evaluateChildTaskResult(task, completedRaw, evidence)
+  const evaluation = { rawResult: completedRaw, result, evidence, verificationResults }
+  writeJournal(ctx.parentRunId, step + ':result', evaluation)
+  return evaluation
 }
 
 function evaluateChildTaskResult(
@@ -1530,17 +1597,20 @@ async function consumeStream(
   agentId: string,
   runId: string,
   onToolCall?: (event: ToolCallEvent) => ToolCallControl,
+  stage = 'simple',
 ): Promise<RunExecutionResult> {
   const partsBuffer = new Map<string, MessagePart[]>()
-  const artifactIds: string[] = []
-  const outputMessageIds: string[] = []
-  const outputArtifacts: Record<string, string> = {}
+  // Retain earlier outputs when a paused stream is resumed after a process restart.
+  const prior = readJournal<RunExecutionResult>(runId, 'stream-results:' + stage)
+  const artifactIds: string[] = prior?.artifactIds ?? []
+  const outputMessageIds: string[] = prior?.outputMessageIds ?? []
+  const outputArtifacts: Record<string, string> = prior?.outputArtifacts ?? {}
   const outputKeyByArtifactId = new Map<string, string>()
   const toolNameByCallId = new Map<string, string>()
-  let taskReport: TaskResultReport | undefined
+  let taskReport: TaskResultReport | undefined = prior?.taskReport
   let currentMessageId: string | null = null
 
-  for await (const event of stream) {
+  try { for await (const event of stream) {
     if (event.type === 'message.start') currentMessageId = event.messageId
     if (event.type === 'tool.call') toolNameByCallId.set(event.callId, event.toolName)
 
@@ -1632,8 +1702,14 @@ async function consumeStream(
         break
       }
     }
+    if (event.type !== 'part.delta') {
+      writeJournal(runId, 'stream-results:' + stage, { artifactIds, outputMessageIds, outputArtifacts, ...(taskReport ? { taskReport } : {}) })
+    }
   }
 
+  } finally {
+    writeJournal(runId, 'stream-results:' + stage, { artifactIds, outputMessageIds, outputArtifacts, ...(taskReport ? { taskReport } : {}) })
+  }
   return { artifactIds, outputMessageIds, outputArtifacts, ...(taskReport ? { taskReport } : {}) }
 }
 
@@ -1757,7 +1833,7 @@ async function insertRun(runId: string, args: RunArgs, agentId: string) {
     status: 'running',
     parentRunId: args.parentRunId,
     startedAt: Date.now(),
-  })
+  }).onConflictDoUpdate({ target: schema.agentRuns.id, set: { status: 'running', error: null, finishedAt: null } })
 }
 
 async function finalize(
@@ -1997,9 +2073,11 @@ async function buildAdapterInput(
       effectiveApiBaseUrl = settings.anthropicBaseUrl
     }
   }
+  if (agent.adapterName === 'custom') effectiveApiBaseUrl = effectiveCustomEndpoint(agent.modelProvider, effectiveApiBaseUrl)
 
   // SDK 新建或失效重建时也需要公开历史；预算失败必须保留原文并显式报错。
   let history: ChatCompletionMessageParam[] = []
+  let protectedMessageKeys: string[] = []
   // Orchestrator 分派的子 agent（args.overridePrompt 已带 spec 06 的隔离上下文：
   // recent_conversation + pinned + artifacts + task）跳过历史注入，不再重复塞一份——
   // 既省 token，也守住 spec 06「子 agent 不看完整群聊历史」的隔离原则。普通会话轮次才注入。
@@ -2017,7 +2095,7 @@ async function buildAdapterInput(
 
   }
 
-  const limits = getModelLimits(agent.modelProvider, agent.modelId, effectiveApiBaseUrl)
+  const limits = resolveContextCapacity({ adapter: agent.adapterName, provider: agent.modelProvider, model: agent.modelId, endpoint: effectiveApiBaseUrl })
   const contextSettings = getPersonalSettings()
   const calibrationIdentity = agent.adapterName === 'custom' && agent.modelProvider && agent.modelId
     ? { provider: agent.modelProvider, modelId: agent.modelId }
@@ -2028,27 +2106,52 @@ async function buildAdapterInput(
     try { calibration = getContextCalibration(calibrationIdentity.provider, calibrationIdentity.modelId, effectiveApiBaseUrl) } catch { /* retain cold-start estimate */ }
   }
   const contextBudget = createContextBudget(limits, contextSettings.contextInputLimitTokens, contextSettings.contextOutputLimitTokens, calibration)
-  const requestTools = agent.adapterName === 'custom' ? toolRegistry.resolve(toolNames).map(toApiTool) : []
-  const baseMessages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPromptWithWorkspace },
-    { role: 'user', content: prompt },
-  ]
-  // Multimodal data URLs are assembled by the adapter; file size is a conservative preflight proxy.
-  const imageBytes = agent.adapterName === 'custom' && agent.supportsVision
-    ? (attachments.filter((a) => a.kind === 'image').slice(0, 5)).reduce((sum, attachment) => {
-        try { return sum + 4 * Math.ceil(statSync(attachment.absPath).size / 3) + 128 } catch { return sum }
-      }, 0)
-    : 0
-  const baseEstimate = Math.ceil(estimateRequestTokens(baseMessages, requestTools) * calibration.plainFactor) + imageBytes
-  if (baseEstimate > contextBudget.maxInputTokens) {
-    throw new Error(`当前输入、工具定义和固定约束已超过模型预算（估算 ${baseEstimate}/${contextBudget.maxInputTokens} tokens）；请缩短输入或调整模型。`)
-  }
+  contextBudget.triggerRatio = contextSettings.contextTriggerRatio
+  contextBudget.targetRatio = contextSettings.contextTargetRatio
   if (!args.overridePrompt) {
-    history = await buildAutomaticHistory(agent.id, args.conversationId, args.triggerMessageId, contextBudget.maxInputTokens - baseEstimate, activeRuns.get(runId)?.signal, Math.max(calibration.plainFactor, calibration.toolFactor))
+    history = await buildHistoryFor(agent.id, args.conversationId, { excludeMessageId: args.triggerMessageId,
+      onPinnedMessages: (messages) => protectedMessageKeys.push(...messages.map(workingMessageKey)) })
   }
 
 
+  // System/memory edits must not hide the original checkpoint and replay completed operations.
+  const stage = contextStage(prompt, '', [])
+  const saved = readCheckpoint(runId, stage)
+  let revision = saved?.revision ?? 0
+  let latest = saved?.checkpoint ?? null
+  protectedMessageKeys = latest?.protectedMessageKeys ?? protectedMessageKeys
   return {
+    contextControl: {
+      restored: latest,
+      summaryChunkTokens: await workingSummaryChunkTokens(agent.id),
+      protectedMessageKeys,
+      save: (checkpoint) => {
+        latest = { ...checkpoint, protectedMessageKeys, progress: latest?.progress,
+          phase: agent.isOrchestrator ? toolNames.includes('plan_tasks') ? 'planning' : 'aggregation' : 'execution',
+          source: { conversationId: args.conversationId, triggerMessageId: args.triggerMessageId, runId } }
+        revision = writeCheckpoint(runId, stage, revision, latest)
+      },
+      summarize: (text, signal) => summarizeWorkingText(agent.id, text, signal, (inputTokens, outputTokens) => {
+        const usage = readJournal<{ input: number; output: number }>(runId, 'summary-usage') ?? { input: 0, output: 0 }
+        writeJournal(runId, 'summary-usage', { input: usage.input + inputTokens, output: usage.output + outputTokens })
+      }),
+      progress: (progress) => {
+        if (latest) { latest = { ...latest, progress }; revision = writeCheckpoint(runId, stage, revision, latest) }
+        sqlite.prepare('UPDATE agent_runs SET status=?,error=? WHERE id=?').run(progress.state, progress.message, runId)
+        publish({ type: 'run.context', conversationId: args.conversationId, runId, timestamp: Date.now(), ...progress })
+        if (progress.state === 'running' && progress.before !== undefined && progress.after !== undefined) {
+          const usage = readJournal<{ input: number; output: number }>(runId, 'summary-usage')
+          const content = progress.message + (usage ? `。本任务摘要累计用量：输入 ${usage.input} / 输出 ${usage.output} tokens；费用以供应商账单为准。` : '')
+          const messageId = newMessageId()
+          const timestamp = Date.now()
+          // Persist a visible receipt so the success estimate and summary usage survive SSE reconnects.
+          db.insert(schema.messages).values({ id: messageId, conversationId: args.conversationId, role: 'system', parts: [{ type: 'text', content }], status: 'complete', runId, createdAt: timestamp }).run()
+          publish({ type: 'message.start', conversationId: args.conversationId, timestamp, messageId, agentId: agent.id, runId })
+          publish({ type: 'part.start', conversationId: args.conversationId, timestamp, messageId, partIndex: 0, part: { type: 'text', content } })
+          publish({ type: 'message.end', conversationId: args.conversationId, timestamp, messageId })
+        }
+      },
+    },
     agentId: agent.id,
     conversationId: args.conversationId,
     runId,

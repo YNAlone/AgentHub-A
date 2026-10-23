@@ -393,6 +393,7 @@ interface BaseEvent {
 export type StreamEvent = BaseEvent &
   (
     | { type: 'run.start'; runId: string; agentId: string; triggerMessageId: string; parentRunId?: string }
+    | { type: 'run.context'; runId: string; state: 'running' | 'compacting' | 'paused'; message: string; before?: number; after?: number; attempt?: number }
     | { type: 'run.end'; runId: string; status: 'complete' | 'failed' | 'aborted'; error?: string }
     | { type: 'run.usage'; runId: string; usage: RunUsageEvent }
     | { type: 'message.start'; messageId: string; agentId: string; runId: string }

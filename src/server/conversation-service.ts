@@ -317,7 +317,7 @@ export async function clearConversationHistory(
   const activeRuns = await db.query.agentRuns.findMany({
     where: and(
       eq(schema.agentRuns.conversationId, conversationId),
-      inArray(schema.agentRuns.status, ['queued', 'running']),
+      inArray(schema.agentRuns.status, ['queued', 'running', 'compacting', 'paused']),
     ),
   })
   if (activeRuns.length > 0) {
@@ -785,7 +785,7 @@ export async function withdrawLatestUserMessage(
     where: and(
       eq(schema.agentRuns.conversationId, conversationId),
       gte(schema.agentRuns.startedAt, msg.createdAt),
-      eq(schema.agentRuns.status, 'running'),
+      inArray(schema.agentRuns.status, ['running', 'compacting', 'paused']),
     ),
   })
   if (runsToAbort.length > 0) {
@@ -891,7 +891,7 @@ export async function regenerateLatestResponse(
     where: and(
       eq(schema.agentRuns.conversationId, conversationId),
       gt(schema.agentRuns.startedAt, latestUser.createdAt),
-      eq(schema.agentRuns.status, 'running'),
+      inArray(schema.agentRuns.status, ['running', 'compacting', 'paused']),
     ),
   })
   if (runsToAbort.length > 0) {

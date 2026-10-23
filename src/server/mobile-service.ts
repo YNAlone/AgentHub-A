@@ -46,7 +46,7 @@ export interface MobileRun {
   id: string
   conversationId: string
   agentId: string
-  status: 'queued' | 'running' | 'complete' | 'failed' | 'aborted' | 'interrupted'
+  status: 'queued' | 'running' | 'compacting' | 'paused' | 'complete' | 'failed' | 'aborted' | 'interrupted'
   startedAt: number
 }
 
@@ -276,7 +276,7 @@ async function listActiveRuns(conversationIds: string[]): Promise<AgentRunRow[]>
   return db.query.agentRuns.findMany({
     where: and(
       inArray(schema.agentRuns.conversationId, conversationIds),
-      inArray(schema.agentRuns.status, ['queued', 'running']),
+      inArray(schema.agentRuns.status, ['queued', 'running', 'compacting', 'paused']),
     ),
     orderBy: [desc(schema.agentRuns.startedAt)],
   })

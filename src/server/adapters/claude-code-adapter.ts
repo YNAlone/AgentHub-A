@@ -452,7 +452,13 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
       // 'project' = 只读绑定目录里的 CLAUDE.md（项目级上下文），不读用户全局 ~/.claude 设定（避免污染）
       settingSources: ['project'],
       permissionMode: 'default', // 自己 canUseTool 接管
-      env: buildSdkEnv(input.apiKey, input.apiBaseUrl),
+      env: { ...buildSdkEnv(input.apiKey, input.apiBaseUrl),
+        ...(input.contextBudget ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(input.contextBudget.maxInputTokens), CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: String(Math.round((input.contextBudget.triggerRatio ?? 0.6) * 100)) } : {}),
+      },
+      hooks: {
+        PreCompact: [{ hooks: [async () => { input.contextControl?.progress({ state: 'compacting', message: 'SDK 正在压缩上下文' }); return {} }] }],
+        PostCompact: [{ hooks: [async () => { input.contextControl?.progress({ state: 'running', message: 'SDK 上下文压缩完成，继续执行' }); return {} }] }],
+      },
       ...(previousSessionId ? { resume: previousSessionId } : {}),
       canUseTool: (toolName, toolInput) =>
         bridgePermission(toolName, toolInput, { workspace, approvalMode, input, signal }),
@@ -464,6 +470,7 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
       for await (const m of q) {
         // SDKSystemMessage init 携带 session_id —— 保存供下次 resume
         if (m.type === 'system') {
+          if (m.subtype === 'compact_boundary') input.contextControl?.progress({ state: 'running', message: 'SDK 原生上下文压缩完成，继续执行' })
           const sid = (m as { session_id?: string }).session_id
           if (sid) { initialized = true; claudeCodeSessions.set(sessionKey, sid) }
           continue
@@ -612,7 +619,8 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
         }
 
         if (m.type === 'result') {
-          if (m.is_error) throw new Error('errors' in m ? m.errors.join('\n') : 'Claude SDK run failed')
+          // Preserve explicit overflow/authentication diagnostics for the shared recovery policy.
+          if (m.is_error) throw new Error('errors' in m ? m.errors.join('\n') : 'result' in m ? m.result : 'Claude SDK run failed')
           // 终止信号 —— 顺便采集 usage（success / error subtypes 都带 usage 字段）
           const resultMsg = m as unknown as {
             usage?: {

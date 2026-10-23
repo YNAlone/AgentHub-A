@@ -3,6 +3,8 @@ import { sqlite } from '@/db/client'
 
 export const PersonalSettings = z.object({
   automaticCompaction: z.boolean().default(true),
+  contextTriggerRatio: z.number().min(0.4).max(0.9).default(0.6),
+  contextTargetRatio: z.number().min(0.1).max(0.35).default(0.35),
   contextInputLimitTokens: z.number().int().min(16_000).max(1_000_000).default(128_000),
   contextOutputLimitTokens: z.number().int().min(1024).max(393_216).nullable().default(null),
   memoryEnabled: z.boolean().default(true),
@@ -19,10 +21,10 @@ sqlite.exec(`CREATE TABLE IF NOT EXISTS personal_settings (id TEXT PRIMARY KEY, 
 /** Store independent capabilities separately from provider secrets and legacy companion settings. */
 export function getPersonalSettings(): PersonalSettingsValue {
   const row = sqlite.prepare("SELECT value FROM personal_settings WHERE id = 'singleton'").get() as { value: string } | undefined
-  return PersonalSettings.parse(row ? JSON.parse(row.value) : {})
+  return { ...PersonalSettings.parse(row ? JSON.parse(row.value) : {}), automaticCompaction: true }
 }
 export function updatePersonalSettings(patch: Partial<PersonalSettingsValue>): PersonalSettingsValue {
-  const next = PersonalSettings.parse({ ...getPersonalSettings(), ...patch })
+  const next = PersonalSettings.parse({ ...getPersonalSettings(), ...patch, automaticCompaction: true })
   sqlite.prepare("INSERT INTO personal_settings VALUES ('singleton', ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value").run(JSON.stringify(next))
   return next
 }

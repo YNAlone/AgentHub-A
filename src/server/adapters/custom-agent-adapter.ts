@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs'
 import OpenAI from 'openai'
 
 import { newMessageId } from '@/server/ids'
-import { assertRequestFits, createContextBudget, estimateRequestTokens, toApiTool } from '@/server/context-budget'
+import { createContextBudget, estimateRequestTokens, toApiTool } from '@/server/context-budget'
+import { compactWorkingContext, ContextPausedError, isContextOverflow, pendingContextCalls } from '@/server/working-context'
 import { toolRegistry } from '@/server/tools/registry'
 import type { ToolContext } from '@/server/tools/types'
 import { getModelLimits } from '@/shared/model-registry'
@@ -72,39 +73,62 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
       ? buildMultimodalUserContent(input.prompt, imageAttachments)
       : input.prompt
 
-    const messages: ChatMessage[] = [
+    let messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       // 跨 run 历史：spec 13 序列化的对话上下文。空数组时行为与旧版一致（向后兼容）。
       ...(input.history ?? []),
       { role: 'user', content: userContent },
     ]
+    let currentUserIndex = messages.length - 1
 
     const MAX_TURNS = 8
     let turn = 0
     // 跨 turn 累加 token 用量；run 结束前 yield run.usage 给 AgentRunner 落库
-    const runUsage = {
+    let runUsage = {
       inputTokens: 0,
       outputTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
       lastInputTokens: 0,
     }
+    let providerRecoveries = 0
+    let forceCompaction = false
+    let previousMeasured: { tokens: number; estimate: number } | null = null
+    const restored = input.contextControl?.restored
+    if (restored) {
+      if (restored.completed) return
+      if (restored.pendingTool || pendingContextCalls(restored.messages).length) throw new ContextPausedError('工具执行结果未确认，已保留现场；请先核对副作用，不能自动重跑。')
+      messages = restored.messages
+      currentUserIndex = restored.currentUserIndex
+      turn = restored.turn
+      providerRecoveries = restored.progress?.state === 'paused' ? 0 : restored.providerRecoveries
+      runUsage = restored.usage
+      forceCompaction = restored.progress?.state === 'paused'
+    }
+    const checkpoint = (pendingTool?: string, completed = false) => input.contextControl?.save({ messages, currentUserIndex, turn, providerRecoveries, usage: runUsage, pendingTool, completed })
 
     while (turn < MAX_TURNS) {
       if (signal.aborted) return
-      turn++
-
-      // A tool result can grow the next request after the initial history check.
-      const rawEstimate = estimateRequestTokens(messages, apiTools)
+      // Snapshot before any summary attempt, so failures resume after completed tool operations.
+      checkpoint()
+      let rawEstimate = estimateRequestTokens(messages, apiTools)
+      const estimate = previousMeasured ? Math.max(0, previousMeasured.tokens + rawEstimate - previousMeasured.estimate) : rawEstimate
       const hasToolResult = messages.some((message) => message.role === 'tool')
-      try {
-        assertRequestFits(contextBudget, messages, apiTools, rawEstimate)
-      } catch (error) {
-        if (turn > 1) {
-          yield baseEvent(input, { type: 'run.usage', runId: input.runId, usage: { ...runUsage, model: modelId } })
-        }
-        throw error
+      if (input.contextControl) {
+        const compacted = await compactWorkingContext({ messages, tools: apiTools, budget: contextBudget, currentUserIndex,
+          summarize: input.contextControl.summarize, summaryChunkTokens: input.contextControl.summaryChunkTokens, signal, force: forceCompaction, estimate,
+          progress: input.contextControl.progress, protectedMessageKeys: input.contextControl.protectedMessageKeys }).catch((error) => {
+            if (error instanceof ContextPausedError) input.contextControl?.progress({ state: 'paused', message: error.message })
+            throw error
+          })
+        if (compacted.messages !== messages) previousMeasured = null
+        messages = compacted.messages
+        currentUserIndex = compacted.currentUserIndex
+        forceCompaction = false
+        checkpoint()
+        rawEstimate = estimateRequestTokens(messages, apiTools)
       }
+      turn++
 
       const messageId = newMessageId()
       yield baseEvent(input, {
@@ -136,6 +160,18 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
         )
       } catch (err) {
         yield baseEvent(input, { type: 'message.end', messageId })
+        if (input.contextControl && isContextOverflow(err)) {
+          turn--
+          if (providerRecoveries++ >= 2) {
+            checkpoint()
+            const message = '服务商仍拒绝上下文，已暂停；请检查模型窗口配置后继续。'
+            input.contextControl.progress({ state: 'paused', message })
+            throw new ContextPausedError(message)
+          }
+          forceCompaction = true
+          checkpoint()
+          continue
+        }
         throw err
       }
 
@@ -160,6 +196,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
           runUsage.outputTokens += out
           runUsage.cacheReadTokens += cached
           runUsage.lastInputTokens = inp
+          if (inp > 0) previousMeasured = { tokens: inp, estimate: rawEstimate }
           // Multimodal payloads lack a stable byte-to-token relation and never train text calibration.
           if (inp > 0 && !usageRecorded && !useMultimodal) {
             input.onContextUsage?.(rawEstimate, inp, hasToolResult)
@@ -268,6 +305,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
       }
 
       if (toolCalls.length === 0 || finishReason === 'stop') {
+        checkpoint(undefined, true)
         if (msgUsage.inputTokens > 0 || msgUsage.outputTokens > 0) {
           yield baseEvent(input, { type: 'message.usage', messageId, usage: msgUsage })
         }
@@ -297,6 +335,8 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
           args,
         })
 
+        // An unfinished side-effect marker prevents blind replay after a process crash.
+        checkpoint(tc.id)
         const result = await toolRegistry.execute(tc.name, args, ctx)
         const value = result.ok ? result.value : { error: result.error }
 
@@ -352,6 +392,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
           tool_call_id: tc.id,
           content: JSON.stringify(value),
         })
+        checkpoint()
       }
 
       if (msgUsage.inputTokens > 0 || msgUsage.outputTokens > 0) {
