@@ -1,9 +1,41 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { getWebToolKey, saveWebToolKey, webToolStatus } from './web-tool-settings'
-import { GET, PATCH } from '@/app/api/settings/web-tools/route'
+import { GET, PATCH, POST } from '@/app/api/settings/web-tools/route'
 import { webSearchTool } from './tools/web-tools'
 
 afterEach(() => { saveWebToolKey(null); vi.unstubAllEnvs(); vi.unstubAllGlobals() })
+it('validates the effective key through a real search request shape without exposing it', async () => {
+  vi.stubEnv('TAVILY_API_KEY', 'environment-secret')
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ results: [] }))
+  vi.stubGlobal('fetch', fetcher)
+  const response = await POST(new Request('http://localhost/api/settings/web-tools', { method: 'POST' }))
+  expect(await response.json()).toMatchObject({ ok: true, message: expect.stringContaining('校验成功') })
+  expect(fetcher.mock.calls[0][1].headers.Authorization).toBe('Bearer environment-secret')
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ max_results: 1 })
+})
+it.each([401, 403, 429, 432, 500])('reports provider HTTP %s safely during validation', async (status) => {
+  saveWebToolKey('saved-secret')
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('saved-secret', { status })))
+  const response = await POST(new Request('http://localhost/api/settings/web-tools', { method: 'POST' }))
+  const body = await response.json()
+  expect(body.ok).toBe(false)
+  expect(body.message).toContain('校验失败')
+  expect(JSON.stringify(body)).not.toContain('saved-secret')
+  expect(getWebToolKey()).toBe('saved-secret')
+})
+it('handles missing credentials and transport failure without leaking details', async () => {
+  vi.stubEnv('TAVILY_API_KEY', '')
+  const fetcher = vi.fn().mockRejectedValue(new Error('private network saved-secret'))
+  vi.stubGlobal('fetch', fetcher)
+  const request = new Request('http://localhost/api/settings/web-tools', { method: 'POST' })
+  expect((await POST(request)).status).toBe(400)
+  expect(fetcher).not.toHaveBeenCalled()
+  saveWebToolKey('saved-secret')
+  const result = await (await POST(request)).json()
+  expect(result.ok).toBe(false)
+  expect(result.message).toContain('网络')
+  expect(JSON.stringify(result)).not.toContain('saved-secret')
+})
 it('preserves blank edits, masks status, and falls back after clearing', async () => {
   vi.stubEnv('TAVILY_API_KEY', 'environment-secret')
   saveWebToolKey('saved-secret')

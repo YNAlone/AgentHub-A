@@ -9,6 +9,7 @@ export function WebToolsSettings() {
   const [status, setStatus] = useState<{ configured: boolean; source: string; stored: boolean } | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
+  const [checking, setChecking] = useState(false)
   const [message, setMessage] = useState('')
   useEffect(() => {
     let active = true
@@ -30,12 +31,26 @@ export function WebToolsSettings() {
       setMessage('已保存。配置状态不代表凭据已通过服务商验证。')
     } catch { setMessage('保存失败，请重试。') } finally { setBusy(false) }
   }
+  // Test only persisted settings so the result always refers to the configuration Agents use.
+  const validate = async () => {
+    setBusy(true)
+    setChecking(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/settings/web-tools', { method: 'POST', signal: AbortSignal.timeout(25_000) })
+      const result = await response.json()
+      setMessage(typeof result.message === 'string' ? result.message : '校验失败，请检查登录状态后重试。')
+    } catch { setMessage('校验失败：连接中断或超时，请重试。') }
+    finally { setBusy(false); setChecking(false) }
+  }
   return <section className="space-y-4">
     <div><h3 className="font-medium">联网搜索与网页读取</h3><p className="mt-2 text-sm text-muted-foreground">所有 Agent 共用 Tavily 搜索和正文提取。查询词与网页地址会发送给 Tavily，可能产生服务商费用；不支持登录页面或内网地址。</p></div>
     <p className="text-sm" role="status">{status ? status.configured ? '已配置 · ' + (status.source === 'settings' ? '应用设置' : '服务器环境变量') : '尚未配置' : '加载配置中…'}</p>
-    <label className="block space-y-2"><span className="text-sm">Tavily API Key</span><Input type="password" autoComplete="new-password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="输入新 Key；留空保留已有配置" /></label>
+    <label className="block space-y-2"><span className="text-sm">Tavily API Key</span><Input type="password" disabled={busy} autoComplete="new-password" value={key} onChange={(e) => { setKey(e.target.value); setMessage('') }} placeholder="输入新 Key；留空保留已有配置" /></label>
     <div className="flex gap-2"><Button disabled={busy || !status} onClick={() => void save(key)}>保存联网配置</Button><Button variant="outline" disabled={busy || !status?.stored} onClick={() => void save(null)}>清除已保存 Key</Button></div>
     <p className="text-xs text-muted-foreground">也可通过服务器 TAVILY_API_KEY 配置。清除已保存 Key 后，仍会使用环境变量中的 Key。</p>
+    <Button variant="outline" disabled={busy || !status?.configured || !!key.trim()} onClick={() => void validate()}>{checking ? '校验中…' : '校验连接'}</Button>
+    <p className="text-xs text-muted-foreground">{key.trim() ? '请先保存新 Key，再校验连接。' : '校验使用当前已保存的配置，执行一次真实搜索，可能消耗 Tavily 额度。'}</p>
     {message && <p className="text-sm" role="status">{message}</p>}
   </section>
 }
