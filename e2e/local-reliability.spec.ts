@@ -60,7 +60,12 @@ test('从 Agent 库和个人设置搜索消息可以返回目标对话', async (
   await page.goto('/')
   await page.getByRole('button', { name: 'Agents', exact: true }).click()
   for (const location of ['library', 'personal']) {
-    if (location === 'personal') await page.goto('/personal')
+    if (location === 'personal') {
+      await page.goto('/personal')
+      // Wait for client hydration before exercising the window keyboard listener.
+      await page.getByRole('button', { name: '上下文', exact: true }).click()
+      await expect(page.getByRole('combobox', { name: '自动压缩触发阈值' })).toBeVisible()
+    }
     await page.keyboard.press('Control+k')
     const dialog = page.getByRole('dialog')
     await dialog.locator('input').fill('界面导航验收')
