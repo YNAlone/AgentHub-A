@@ -7,6 +7,7 @@ import { CustomAgentAdapter } from './custom-agent-adapter'
 import type { AdapterInput } from './types'
 import { estimateRequestTokens, toApiTool } from '@/server/context-budget'
 import { toolRegistry } from '@/server/tools/registry'
+import { withWebTools } from '@/shared/web-tools'
 import type { StreamEvent } from '@/shared/types'
 
 const baseInput: AdapterInput = {
@@ -27,7 +28,7 @@ afterEach(() => vi.restoreAllMocks())
 
 it('checks the next complete request after a large tool result without replaying the tool', async () => {
   const execute = vi.spyOn(toolRegistry, 'execute').mockResolvedValue({ ok: true, value: { text: '中'.repeat(10_000) } })
-  const tools = toolRegistry.resolve(baseInput.toolNames).map(toApiTool)
+  const tools = toolRegistry.resolve(withWebTools(baseInput.toolNames)).map(toApiTool)
   const firstRequest = estimateRequestTokens([
     { role: 'system', content: baseInput.systemPrompt },
     { role: 'user', content: baseInput.prompt },
@@ -58,4 +59,9 @@ it('reports length-limited model output as incomplete', async () => {
   })())
   await expect(consume({ ...baseInput, toolNames: [], contextBudget: { contextWindow: 100_000, maxOutputTokens: 1024, maxInputTokens: 10_000, safetyTokens: 8192, plainFactor: 1, toolFactor: 1 } })).rejects.toThrow('回答不完整')
   expect(model.create.mock.calls[0][0].max_tokens).toBe(1024)
+  // Even legacy empty tool lists must advertise both defaults to the actual model request.
+  expect(model.create.mock.calls[0][0].tools).toEqual(expect.arrayContaining([
+    expect.objectContaining({ function: expect.objectContaining({ name: 'web_search' }) }),
+    expect.objectContaining({ function: expect.objectContaining({ name: 'web_fetch' }) }),
+  ]))
 })

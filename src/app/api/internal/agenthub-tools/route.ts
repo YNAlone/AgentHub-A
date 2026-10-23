@@ -1,3 +1,4 @@
+import { webSearchTool, webFetchTool } from '@/server/tools/web-tools'
 import { eq } from 'drizzle-orm'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -19,6 +20,8 @@ import { getEffectiveCwd } from '@/server/workspace-utils'
 export const runtime = 'nodejs'
 
 const EXPOSED_TOOLS = {
+  web_search: webSearchTool,
+  web_fetch: webFetchTool,
   write_artifact: writeArtifactTool,
   read_artifact: readArtifactTool,
   deploy_artifact: deployArtifactTool,

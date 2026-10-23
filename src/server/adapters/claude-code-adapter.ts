@@ -1,3 +1,4 @@
+import { webSearchTool, webFetchTool, webSearchShape, webFetchShape } from '@/server/tools/web-tools'
 import {
   AbortError,
   createSdkMcpServer,
@@ -60,6 +61,8 @@ const PLAN_TASKS_TOOL_NAME = 'plan_tasks'
 /** 规划阶段保留的 SDK 内置工具：只读侦察 + 联网核查（联网是最基础的工具，规划期不做限制） */
 const CLAUDE_PLAN_STAGE_BUILTIN_TOOLS = ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch']
 const CLAUDE_PLAN_STAGE_AGENTHUB_TOOLS = new Set([
+  'web_search',
+  'web_fetch',
   PLAN_TASKS_TOOL_NAME,
   'ask_user',
   'fs_list',
@@ -118,6 +121,15 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
     }
     const isPlanStage = input.toolNames.includes(PLAN_TASKS_TOOL_NAME)
     const mcpTools = [
+        // Share handlers across adapters and planning stages.
+        tool('web_search', webSearchTool.description, webSearchShape, async (args) => {
+          const result = await webSearchTool.handler(args, toolCtx)
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result.ok ? result.value : { error: result.error }) }], isError: !result.ok }
+        }),
+        tool('web_fetch', webFetchTool.description, webFetchShape, async (args) => {
+          const result = await webFetchTool.handler(args, toolCtx)
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result.ok ? result.value : { error: result.error }) }], isError: !result.ok }
+        }),
         tool(
           PLAN_TASKS_TOOL_NAME,
           'Create the AgentHub Orchestrator dispatch plan. Call this exactly once when the plan is ready; AgentHub will stop the planning stage and execute the plan after user review.',

@@ -1,4 +1,6 @@
 const AGENTHUB_TOOL_LABELS = {
+  web_search: '搜索网页',
+  web_fetch: '读取网页',
   write_artifact: '创建产物',
   read_artifact: '读取产物',
   deploy_artifact: '部署网页',

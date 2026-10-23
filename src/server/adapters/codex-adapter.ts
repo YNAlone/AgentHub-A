@@ -1,3 +1,4 @@
+import { withWebTools } from '@/shared/web-tools'
 import path from 'node:path'
 import { statSync } from 'node:fs'
 
@@ -38,6 +39,8 @@ import type { AdapterInput, AgentPlatformAdapter } from './types'
 const DEFAULT_MODEL = 'gpt-5-codex'
 const PLAN_TASKS_TOOL_NAME = 'plan_tasks'
 const CODEX_PLAN_STAGE_AGENTHUB_TOOLS = [
+  'web_search',
+  'web_fetch',
   PLAN_TASKS_TOOL_NAME,
   'ask_user',
   'fs_list',
@@ -266,9 +269,9 @@ function buildCodexMcpEnv(
   }
 }
 
-function getCodexAllowedTools(input: AdapterInput): string | undefined {
+export function getCodexAllowedTools(input: AdapterInput): string | undefined {
   if (!input.toolNames.includes(PLAN_TASKS_TOOL_NAME)) return undefined
-  const requested = new Set(input.toolNames)
+  const requested = new Set(withWebTools(input.toolNames))
   return CODEX_PLAN_STAGE_AGENTHUB_TOOLS.filter(
     (toolName) => toolName === PLAN_TASKS_TOOL_NAME || requested.has(toolName),
   ).join(',')

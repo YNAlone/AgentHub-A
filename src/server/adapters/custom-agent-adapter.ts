@@ -1,3 +1,4 @@
+import { withWebTools } from '@/shared/web-tools'
 import { readFileSync } from 'node:fs'
 
 import OpenAI from 'openai'
@@ -50,7 +51,7 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
 
     const client = buildClient(modelProvider, apiKey, input.apiBaseUrl)
 
-    const toolDefs = toolRegistry.resolve(input.toolNames)
+    const toolDefs = toolRegistry.resolve(withWebTools(input.toolNames))
     const apiTools = toolDefs.map(toApiTool)
     const contextBudget = input.contextBudget ?? createContextBudget(getModelLimits(modelProvider, modelId, input.apiBaseUrl))
 

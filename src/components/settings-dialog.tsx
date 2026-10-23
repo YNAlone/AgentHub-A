@@ -1,4 +1,5 @@
 'use client'
+import { WebToolsSettings } from '@/components/web-tools-settings'
 
 import { CONFIGURED_SECRET, CLEAR_SECRET, credentialEdit } from '@/shared/credential-edit'
 
@@ -267,6 +268,7 @@ export function SettingsDialog({
                   <Smartphone className="size-3.5" />
                   移动端
                 </TabsTrigger>
+                <TabsTrigger value="web">联网工具</TabsTrigger>
                 <TabsTrigger value="publish">
                   <FolderUp className="size-3.5" />
                   发布
@@ -292,6 +294,7 @@ export function SettingsDialog({
             </div>
 
             <div className="min-h-0 overflow-y-auto pr-1">
+              <TabsContent value="web" className="mt-0 py-1"><WebToolsSettings /></TabsContent>
               <TabsContent value="keys" className="mt-0 flex flex-col gap-3 py-1">
                 <KeyField
                   label="Anthropic API Key"
@@ -374,11 +377,11 @@ export function SettingsDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            取消
+            {tab === 'web' ? '关闭' : '取消'}
           </Button>
-          <Button onClick={() => void handleSave()} disabled={busy || loading}>
+          {tab !== 'web' && <Button onClick={() => void handleSave()} disabled={busy || loading}>
             {busy ? '保存中…' : '保存'}
-          </Button>
+          </Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
