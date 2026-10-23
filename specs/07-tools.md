@@ -539,7 +539,9 @@ AgentHub 额外给 Codex 注入一个 stdio MCP bridge，只暴露 allowlist：`
 
 ## 共享联网工具
 
-所有真实 Agent 在普通、规划、聚合运行中默认获得 web_search 与 web_fetch；无需迁移已有 toolNames。Custom 使用 Registry，Claude/Codex 使用 AgentHub MCP 包装同一服务；SDK 原生工具独立存在，Codex 沙箱仍禁用网络。
+所有真实 Agent 在普通、规划、聚合运行中默认获得 web_search、web_fetch 与 web_tool_status；无需迁移已有 toolNames。Custom 使用 Registry，Claude/Codex 使用 AgentHub MCP 包装同一服务；SDK 原生工具独立存在，Codex 沙箱仍禁用网络。
+
+- web_tool_status 接收 tool（web_search 或 web_fetch），对对应能力发起一次有界真实请求，返回 available、checkedAt、reason 与脱敏说明；可能消耗服务商额度，不缓存历史失败。运行时发现历史联网故障声明时主动复查；ask_user 提问中的联网不可用声明也先经过服务端校验，成功则不创建用户待答问题。配置存在与连接成功分别展示；写入/部署/命令等工具不得为健康检查盲目重放。
 
 - web_search 接收 query（1–2000 字符）、可选 maxResults（1–10，默认 5），调用 Tavily Search，返回标题、URL、摘要。
 - web_fetch 接收一个公开 HTTP(S) URL，调用 Tavily Extract 提取正文；不支持登录、浏览器交互、内网或自定义端口。
@@ -549,3 +551,19 @@ AgentHub 额外给 Codex 注入一个 stdio MCP bridge，只暴露 allowlist：`
 - 查询和目标 URL 会发给 Tavily，可能产生服务商费用。接口契约参考 https://docs.tavily.com/documentation/api-reference/endpoint/search 与 https://docs.tavily.com/documentation/api-reference/endpoint/extract 。
 
 联网设置提供「校验连接」：POST /api/settings/web-tools 使用已生效 Key 发起一次最小结果数搜索，继承 20 秒超时与取消机制。成功仅表示搜索请求通过，不代表正文提取已验证。未保存输入先保存；保存/清除/编辑后旧结果失效。失败显示凭据、限流/额度或网络错误，不回传服务商原始错误；校验可能消耗额度，由用户主动触发。
+
+### Requirement: Tool availability SHALL use current evidence
+
+Each run MUST receive a fresh, secret-free web configuration snapshot. Historical errors are not current availability evidence. Agents MUST recheck a read-only tool or use its status probe before claiming it is unavailable; side-effecting tools MUST NOT be replayed solely as health checks.
+
+`web_tool_status` SHALL be shared by Custom, Claude and Codex, and perform a bounded real request for the requested search/fetch capability. Configured credentials alone SHALL NOT be described as a verified connection. Probes SHALL honor cancellation and redact provider secrets.
+
+#### Scenario: Stale missing-key question
+- **WHEN** ask_user claims web tools/Tavily are unavailable or asks to configure them
+- **THEN** the server probes current availability before registering a pending question
+- **AND** a successful probe returns corrective tool feedback without interrupting the user, instructing the Agent to perform the actual requested search
+- **AND** a failed probe adds the current diagnostic to the question without changing credentials.
+
+#### Scenario: Provider recovers
+- **WHEN** a new status probe follows a previous failed probe
+- **THEN** it reads the current credential and retries the provider without reusing stale failure state.

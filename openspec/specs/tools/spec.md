@@ -160,3 +160,19 @@ AgentHub MUST provide a `report_task_result` tool for Orchestrator-dispatched ch
 - **WHEN** a child run calls `report_task_result` with `status="blocked"`
 - **THEN** the dispatch task is treated as not complete
 - **AND** blocker details remain available to aggregation.
+
+### Requirement: Tool availability SHALL use current evidence
+
+Each run MUST receive a fresh, secret-free web configuration snapshot. Historical errors are not current availability evidence. Agents MUST recheck a read-only tool or use its status probe before claiming it is unavailable; side-effecting tools MUST NOT be replayed solely as health checks.
+
+`web_tool_status` SHALL be shared by Custom, Claude and Codex, and perform a bounded real request for the requested search/fetch capability. Configured credentials alone SHALL NOT be described as a verified connection. Probes SHALL honor cancellation and redact provider secrets.
+
+#### Scenario: Stale missing-key question
+- **WHEN** ask_user claims web tools/Tavily are unavailable or asks to configure them
+- **THEN** the server probes current availability before registering a pending question
+- **AND** a successful probe returns corrective tool feedback without interrupting the user, instructing the Agent to perform the actual requested search
+- **AND** a failed probe adds the current diagnostic to the question without changing credentials.
+
+#### Scenario: Provider recovers
+- **WHEN** a new status probe follows a previous failed probe
+- **THEN** it reads the current credential and retries the provider without reusing stale failure state.
