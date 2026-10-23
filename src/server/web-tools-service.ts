@@ -4,7 +4,8 @@ import { z } from 'zod'
 
 const MAX_BYTES = 2_000_000
 const PublicUrl = z.string().url().max(2048)
-const Result = z.object({ url: z.string(), title: z.string().optional(), content: z.string().optional(), raw_content: z.string().optional(), published_date: z.string().optional() })
+// Tavily uses null for omitted enrichment fields, including raw_content when extraction is disabled.
+const Result = z.object({ url: z.string(), title: z.string().nullish(), content: z.string().nullish(), raw_content: z.string().nullish(), published_date: z.string().nullish() })
 const Reply = z.object({ results: z.array(Result), failed_results: z.array(z.unknown()).optional() })
 
 /** Conservative public-unicast policy rejects special ranges, including IPv4 mapped IPv6. */

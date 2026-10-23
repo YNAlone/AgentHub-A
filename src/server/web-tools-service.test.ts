@@ -30,6 +30,13 @@ it('uses the fixed search endpoint, bounds excerpts and retains citations', asyn
   expect(result.results[0].text).toHaveLength(3000)
   expect(result.untrusted).toBe(true)
 })
+it('accepts nullable optional fields in actual Tavily search responses', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ results: [
+    { url: 'https://public.org/', title: 'Source', content: 'Search excerpt', raw_content: null, published_date: null },
+  ] })))
+  const result = await runWebTool('search', { query: 'Tavily', maxResults: 1 }, 'secret', new AbortController().signal)
+  expect(result.results[0]).toMatchObject({ text: 'Search excerpt', publishedAt: null })
+})
 it('extracts text using the provider and reports unreadable pages', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ results: [{ url: 'https://public.org/', raw_content: 'body' }] }))
     .mockResolvedValueOnce(Response.json({ results: [], failed_results: [{}] }))
