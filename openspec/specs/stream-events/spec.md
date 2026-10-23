@@ -92,3 +92,10 @@ Failures MUST be represented in both AgentRun status and conversation-visible me
 - **THEN** AgentRunner marks streaming messages as `error`
 - **AND** persists and publishes error `tool_result` events for unresolved tool calls in the run
 - **AND** appends or creates a visible `[失败]` message.
+
+### Requirement: Context transitions SHALL be durable events
+run.context SHALL carry runId, state (compacting/paused/running), message and optional estimated before/after/attempt. Paused SHALL not be emitted as a failed run.end.
+
+#### Scenario: Summary retry exhausts
+- **WHEN** all three attempts fail
+- **THEN** a paused context event and durable checkpoint are available after reconnect.

@@ -336,3 +336,6 @@ app_settings ──(独立，无外键)── 单行表，与任何业务表都�
 | AppSettings | `'singleton'` | 不用 nanoid，固定字面量 |
 
 ID 生成器统一在 `src/server/ids.ts`，nanoid 长度 12，URL-safe alphabet。`app_settings.id` 不走 nanoid，由 `settings-service.SINGLETON_ID` 直接写入。
+
+## 可恢复工作上下文（2026-10-23）
+run_context_checkpoints(run_id,stage,revision,value,updated_at)，复合主键 run_id/stage，revision 条件更新实现 CAS。value 保存消息、当前位置、工具待确认标识、阶段、原文引用、SDK 标识、usage 和压缩重试进度，不含运行时凭据。run_workflow_journal(run_id,step,value) 保存稳定输入、完成阶段/子任务、工具证据与摘要用量。启动 bootstrap 幂等建表；删除 run 的 trigger 清除两表对应行。先于异步 run 插入写入 journal，因此不使用外键。

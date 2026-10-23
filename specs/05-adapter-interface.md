@@ -524,3 +524,6 @@ class AgentRegistry {
 ## 共享联网能力
 
 web_search/web_fetch 是全 Agent 默认工具，在规划、执行和聚合阶段均注入。Custom 走 Registry；Claude MCP 与 Codex stdio MCP 转发至共享服务。工具可用性不依赖旧 Agent 保存列表，原生 SDK 工具权限不因此扩大。配置与数据边界见 specs/07-tools.md「共享联网工具」。
+
+## 统一上下文控制（2026-10-23）
+AdapterInput.contextControl 注入 restored、save、summarize、progress、summaryChunkTokens、protectedMessageKeys；L3 持有 SQLite，适配器只调用回调。Custom 在每次请求前替换工作上下文；SDK 用公开事件与安全轮次边界，保留原生压缩。摘要后必须废弃旧 SDK handle，完成的 turn 不重放；不承诺 SDK 内部每次调用精确在 60% 触发。OAuth-only 摘要使用同 SDK、无工具、隔离会话。详见 Spec 16 §4。

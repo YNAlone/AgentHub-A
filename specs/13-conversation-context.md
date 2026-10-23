@@ -201,41 +201,11 @@ const history = await buildHistoryFor(agent.id, args.conversationId, {
 
 ## Token 预算
 
-`buildHistoryFor` 的 `tokenBudget` 选项控制 history 的估算上限，**不含** system prompt / current user / output reserve。AgentRunner 先估算固定内容、工具定义和附件，再把剩余额度交给 history：
+当前运行策略以 [Spec 16 §4](16-local-personal.md#4-上下文与自动压缩) 为准：按实际模型身份配置容量，输出和安全余量独立预留，估算达到 60% 自动压缩到 35% 以下；不因本地估算超预算直接失败。摘要连续失败后暂停并以原 run 恢复，原始历史和工具结果不删除。
 
-```typescript
-const limits = getModelLimits(agent.modelProvider, agent.modelId, agent.apiBaseUrl)
-const budget = createContextBudget(limits, settings.contextInputLimitTokens, settings.contextOutputLimitTokens)
-const historyBudget = budget.maxInputTokens - estimateRequestTokens(baseMessages, tools) - imageBytes
-```
+`context-budget.ts` 使用语言与结构感知估算。`working-context.ts` 实现分块摘要、保护当前输入和置顶约束、重试与暂停；`context-capacity.ts` 持久化身份隔离的容量覆盖；`context-checkpoints.ts` 提供 run/阶段隔离的 CAS 检查点。`agent-runner.ts` 注入持久化与摘要回调，适配器不写 DB。
 
-### 历史与工具轮次
-
-序列化全部候选消息（每条 → 1 个 user message OR 1 个 assistant + K 个 tool messages），按 chronological order 排好。每组用完整 JSON 请求形态的 UTF-8 字节数估算；这是未接入模型 tokenizer 前有意偏高的保守估算。
-
-如果总估算超出硬预算，先自动压缩可压缩历史；摘要、Pin 和最近消息仍超限时明确失败，不静默丢弃原始消息。CustomAgentAdapter 在每次模型请求前对实际组装的 messages 与 tools 再检查一次；工具结果增长导致超限时保留已执行结果并停止，不自动重放副作用。
-
-### 模型上下文窗口表
-
-`src/shared/model-registry.ts:KNOWN_MODELS` 列出 modelId 与 provider 配对的已知 contextWindow、默认输出预留和已核实最大输出。DeepSeek `deepseek-flash`、`deepseek-v4-pro` 与路由至 V4.1 Flash 的 `deepseek-v4-flash` 为 1M；自定义兼容端点不自动继承该窗口。不在表里的 modelId 走 provider fallback：
-
-| Provider | Fallback contextWindow |
-|---|---|
-| anthropic | 200K |
-| openai | 128K |
-| deepseek | 64K |
-| volcano-ark | 32K |
-| openai-compatible | 32K |
-
-Provider 也未知（ClaudeCode adapter 没 modelProvider 字段）→ 兜底 200K。
-
-DeepSeek V4 默认思考模式保留 64K，发送的 `max_tokens` 与预留数完全一致；用户可在已核实的供应商最大输出内调节。默认运行输入上限为 128K，可选 256K、512K、1M，最终始终受模型窗口、输出与安全余量限制。SDK 自身的内部窗口和压缩仍由 Claude/Codex SDK 管理。
-
-### Token 估算
-
-完整请求预算冷启动使用 `UTF-8 字节数 ≈ 估算 token 数`，安全余量为 `min(max(8192, 模型窗口的 5%), (窗口－输出预留)的 25%)`，避免小窗口被余量全部占满。按模型和端点指纹分别累计普通请求、含工具结果请求的估算与实际 usage；同类达到至少 30 次样本（含 5 次 ≥4096 字节）后可用最高实测比例再上浮 25% 的系数，7 天后过期。图片请求不参与文本校准，未知类别继续按字节估算。这不是所有模型的数学上界；API 返回的 usage 是实际输入依据。普通记忆检索等非完整请求用途仍可能使用旧粗估函数。
-
----
+Custom 每个模型请求前检查；Claude/Codex 使用原生压缩和可观测安全边界，压缩后不恢复旧上下文 handle。完整契约与验收范围见 Spec 16 和开发变更记录。
 
 ## 手动上下文压缩（Phase E，第一版）
 
@@ -301,7 +271,7 @@ compact 成功后，service 额外写一条 `role='system'` 的提示消息，�
 
 该系统消息只用于用户可见反馈，不参与 summary 表语义。
 
-第一版不做自动压缩；自动阈值触发留到后续 Phase E.2。
+自动压缩及暂停恢复已纳入 Spec 16 §4，手动压缩保留为可选入口。
 
 ---
 
@@ -310,7 +280,7 @@ compact 成功后，service 额外写一条 `role='system'` 的提示消息，�
 聊天 header 的 `UsageBadge`（`src/components/usage-badge.tsx`）原本就在显示「Σ N.Nk tok」累计；点开 popover 看 input/output/cache 拆分 + per-agent / per-model 拆分。Phase D 把「上下文容量」这件事并进同一个 popover：
 
 - 「当前 ctx」行从单 token 数升级为「used / ceiling (pct%)」+ 进度条；颜色分档 <50% 灰 / 50-80% 黄 / >80% 红
-- popover 底部那条「所有 token 都计费」提示后追加一句「Pin 消息可避免被预算自动截断」
+- popover 底部那条「所有 token 都计费」提示后追加一句「Pin 消息在压缩时保持原文」
 
 **Why 不做底部独立指示器**：早期 Phase D 加过一个聊天底部的 `ContextUsageIndicator` 一行 UI，跟 UsageBadge 信息高度重叠 + 数据源不稳定（runsByConv 只在 streaming 时填，刷新后无数据时只能显占位），用户反馈视觉占位但没增量价值，已删。
 
@@ -330,7 +300,7 @@ compact 成功后，service 额外写一条 `role='system'` 的提示消息，�
 | **thinking part 回传** | 一律丢。OpenAI 不支持回传 reasoning，DeepSeek 等模型回传也无意义 |
 | **artifact 全文注入** | 永远只放 `[产物: title (id=art_xxx)]` 占位，agent 用 `read_artifact` 按需取 |
 | **跨 conversation 记忆** | 不做。每个 conversation 是独立 sandbox |
-| **未经验证的模型 tokenizer** | 本期使用保守 UTF-8 估算和显式余量，不声称字符固定比例足以安全填满 1M；精确计数需为目标模型单独验证 |
+| **未经验证的模型 tokenizer** | 本期使用语言/结构感知估算、实际 usage 校准和显式余量，不声称字符固定比例足以安全填满 1M；精确计数需为目标模型单独验证 |
 | **省流 / 全量 模式开关** | 让用户判断「该开省流还是全量」是错误的抽象——真实需求是「成本透明 + 自动稳定」。Phase D 的用量指示器 + 自动预算已经覆盖；用户主动管理走 pin / unpin 细粒度 |
 
 ---

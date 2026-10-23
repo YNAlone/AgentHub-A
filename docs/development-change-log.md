@@ -178,3 +178,13 @@ Added explicit saved-configuration validation via one bounded Tavily search requ
 ## 2026-10-23 — Tavily nullable search fields
 
 Server reproduction found a successful provider response rejected because raw_content was null. Accept nullable optional result fields while retaining required URL validation and existing output fallbacks. A regression fixture reproduced the ZodError before the fix; 33 web service/settings tests pass after the fix.
+
+## 2026-10-23 — Resumable context management
+
+- Replaced local estimated-input rejection with mandatory 60%/35% working-context compaction. Model identity overrides include adapter/provider/effective endpoint/model; legacy input caps are migration metadata. Default output reserve 8192 with known model capability constraints, safety 2%.
+- Preserved source messages, pinned constraints, source URLs and completed tool evidence. Added bounded hierarchical summaries, retries after 2s/5s, durable paused runs, per-stage CAS checkpoints and same-run idempotent resume/cancel. Stable orchestration prompts, results and side-effect evidence survive restarts.
+- Integrated Custom request boundaries and Claude/Codex native compaction/safe boundaries, invalidating stale handles on rebuild. Added tool-free SDK summaries for OAuth-only access. UI includes capacity controls, pause/retry/cancel states, compression receipts and summary token usage; monetary charges remain provider-reported.
+- Fixed capacity/summary identity to match existing DeepSeek routing: saved Agent URL can differ from the effective api.deepseek.com/v1 endpoint; routing itself was not changed.
+- Validation: 301 unit/integration assertions passed, 4 skipped (2 existing plus 2 opt-in live tests); typecheck and lint passed. Browser coverage: settings/authentication, chat, web tools, capacity saving, persisted pause, original-run resume and cancellation (10 distinct scenarios; recovery selector corrected and rerun). pnpm build passed; pnpm db:push passed against a disposable database. Migration on a copy of server data returned integrity_check=ok and retained all 33 source messages.
+- Real Custom/DeepSeek test passed with five large retained search results, both at 1M without compaction and at a smaller forced-compaction window. Real Claude SDK session creation and post-compaction handle rebuild passed using the user's newly configured Anthropic-compatible endpoint. Codex real test encountered local TLS failure and server timeout; the user explicitly waived it for this release. SDK mocked checkpoint/rebuild/no-replay tests passed; no claim of successful live Codex validation.
+- Deployment and backup evidence will be recorded after rollout verification.

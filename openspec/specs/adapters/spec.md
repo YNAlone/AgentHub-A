@@ -84,3 +84,10 @@ CodexAdapter MUST set `CODEX_HOME` and `CODEX_SQLITE_HOME` to AgentHub-managed d
 - **WHEN** AgentHub starts Codex SDK
 - **THEN** the child runtime does not read the user's `~/.codex` config
 - **AND** AgentHub per-agent settings determine key and base URL.
+
+### Requirement: Adapters SHALL honor resumable context control
+Adapters SHALL use the L3 contextControl callbacks without database ownership. Custom checks every request. Claude/Codex use SDK native compaction and observable safe boundaries, replacing old handles after application compaction. Completed tools SHALL not replay.
+
+#### Scenario: Only SDK login authorization exists
+- **WHEN** a summary is needed
+- **THEN** the same SDK supplies a tool-free summary channel; no unrelated provider is selected.

@@ -1,0 +1,2 @@
+# Resumable context management
+Replace estimated input-budget failures with automatic compaction at 60% of usable capacity, targeting 35%. Preserve original evidence, retry summaries twice (2s/5s), pause durably on failure and resume the same run without replaying completed tools. Apply shared policy to Custom and SDK safe boundaries; use 1M for the user-confirmed DeepSeek Flash / open.bigmodel.cn endpoint.

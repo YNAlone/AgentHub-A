@@ -170,6 +170,8 @@ Orchestrator 走同一个 `AgentRunner`，只是多了 `dispatch_to_agent` 工�
 
 涉及 HTTP 认证、凭据 DTO、项目归属、SDK 恢复、自动压缩、SSE 或长期记忆时，先读 `specs/16-local-personal.md`。本机个人版契约以该规格为准，覆盖旧版远程伴随行为。变更与验收证据写入 `docs/development-change-log.md`。
 
+运行上下文通过 `working-context.ts` 自动压缩，`context-capacity.ts` 管理模型身份隔离的容量，`context-checkpoints.ts` 保存可恢复现场；不要重新引入估算超限直接失败。Adapter 使用 L3 注入的 contextControl 回调，暂停任务通过原 run ID 恢复，不重放已完成工具。SDK 验收必须区分模拟覆盖和真实模型结果。
+
 
 Key 来源按优先级（详见 `src/server/settings-service.ts` 与 `src/server/agent-runner.ts:buildAdapterInput`）：
 

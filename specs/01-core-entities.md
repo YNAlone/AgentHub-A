@@ -306,3 +306,6 @@ Conversation ─1:1─ Workspace
      │
      └─1:N─ Attachment
 ```
+
+## 可恢复上下文状态（2026-10-23）
+AgentRun.status 新增 compacting、paused；paused 无 finishedAt，不是 failed，不解锁下游。resume 复用原 ID，取消使用 aborted。检查点与原文引用见 Spec 16 §4。

@@ -55,3 +55,10 @@ Global API settings MUST be stored in the single-row `app_settings` table and SH
 - **WHEN** the settings API receives `deployment_publish_enabled`, `deployment_publish_dir`, or `deployment_public_base_url`
 - **THEN** it normalizes empty strings to null
 - **AND** stores the values in the single `app_settings` row.
+
+### Requirement: Context checkpoints SHALL survive restart
+Checkpoints SHALL be isolated by run/stage with revision CAS; workflow journals SHALL retain completed operations and stable prompts. Deleting a run SHALL clean both tables. Runtime credentials SHALL not enter checkpoints.
+
+#### Scenario: Concurrent agents compact
+- **WHEN** two Agents save different run checkpoints
+- **THEN** their summaries remain isolated and stale revisions are rejected.

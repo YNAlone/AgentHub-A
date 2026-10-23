@@ -309,3 +309,6 @@ Plan review adds three dispatch events before the existing `dispatch.plan` execu
 These events are pass-through and are not persisted. The pending queue is recoverable through `GET /api/conversations/:id/pending-dispatch-plans` while the server process is alive.
 
 `dispatch.plan.updated` replaces a validated pending plan without approving it. Clients reconcile task statuses by task id, preserve retained statuses, and initialize added tasks as pending. Invalid edits leave the original pending plan unchanged and emit no update event.
+
+## 上下文运行事件（2026-10-23）
+新增 run.context：runId、state(running/compacting/paused)、message、可选 before/after（估算 tokens）、attempt。事件随 SSE 日志持久化并更新 run 状态。暂停不发送失败的 run.end；恢复复用 run ID。压缩成功通知保留前后估算和摘要用量。

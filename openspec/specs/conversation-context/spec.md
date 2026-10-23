@@ -1,75 +1,48 @@
 # Conversation Context
 
-> 本机个人版当前契约见 [Spec 16](../../../specs/16-local-personal.md)。本期认证、项目/记忆、SDK/任务恢复、上下文预算和 SSE 恢复覆盖旧契约；远程伴随暂停。
-
 ## Purpose
 
-Defines cross-run history serialization, pinned message injection, and context compaction. Detailed context rules live in `specs/13-conversation-context.md`.
+Defines complete-request capacity, non-destructive compaction and same-run continuation. Detailed contracts: specs/16-local-personal.md §4 and specs/13-conversation-context.md.
 
 ## Requirements
 
-### Requirement: Custom agents SHALL receive bounded chat history
+### Requirement: Capacity SHALL be scoped to effective model identity
+Capacity SHALL be keyed by adapter, provider, normalized effective endpoint and model ID. Explicit overrides take precedence over built-in profiles. Output reservation and a 2% safety margin SHALL be deducted from total capacity. Legacy input caps SHALL remain migration metadata, not execution gates.
 
-CustomAgentAdapter runs MUST receive serialized conversation history within a model-aware complete-request token budget for ordinary user turns. The budget MUST include system instructions, current input, tool schemas, attachments, pinned messages, summaries, output reservation, and an estimator guard. The transmitted output limit MUST equal the reserved output amount.
+#### Scenario: Confirmed 1M model
+- **WHEN** the confirmed DeepSeek V4 Flash identity is selected
+- **THEN** its total window is 1,000,000 tokens and unrelated endpoints/models do not inherit the override.
 
-#### Scenario: Conversation has long history
-- **WHEN** AgentRunner builds adapter input
-- **THEN** it compacts or rejects history before the complete request exceeds the effective model input ceiling.
+### Requirement: Estimates SHALL trigger compaction instead of failure
+At 60% usable input by default, the application SHALL compact toward 35% or less. Estimates SHALL distinguish multilingual text and JSON structure, use recent provider usage plus new content when available, and be labelled estimates.
 
-#### Scenario: A verified DeepSeek model supports 1M
-- **WHEN** a custom agent uses an exact 1M model profile and the user selects a higher operational input limit
-- **THEN** the effective limit can rise toward 1M while preserving output and estimator reserves.
+#### Scenario: Five large search results follow one request
+- **WHEN** completed tool results exceed the trigger threshold
+- **THEN** the next model request uses a summary without replaying searches or discarding original results.
 
-#### Scenario: A child prompt is isolated
-- **WHEN** an orchestrator child receives an override prompt
-- **THEN** generic history is omitted and the isolated prompt still receives a complete-request budget check.
+### Requirement: Compaction SHALL preserve constraints and protocol integrity
+System instructions, the latest request, pinned messages and pending tool-call structure SHALL be retained. Source history and tool results SHALL remain durable. Large inputs SHALL be chunked and hierarchically summarized within the summary model capacity. Empty, incomplete or non-shrinking summaries SHALL NOT replace context.
 
-### Requirement: Fallback estimation SHALL expose its uncertainty
-When no trusted tokenizer is available, AgentHub MUST estimate serialized textual request material conservatively, reserve an explicit uncertainty margin, and distinguish estimates from provider-reported token usage.
+#### Scenario: A small number of messages contains large evidence
+- **WHEN** fewer than six messages exceed the threshold
+- **THEN** completed evidence remains eligible for compaction; no six-message floor applies.
 
-#### Scenario: Chinese or tool JSON increases request size
-- **WHEN** input contains multilingual text or tool JSON
-- **THEN** the budget uses the complete serialized content rather than dividing JavaScript string length by four.
+### Requirement: Exhausted summary retries SHALL pause durably
+The initial attempt SHALL be followed by two retries after 2 and 5 seconds. Exhaustion SHALL persist a paused run with versioned context and workflow checkpoints. Resume SHALL retain the original run ID and be idempotent. Unknown side effects SHALL require verification, never blind replay.
 
-#### Scenario: A model has enough usage observations
-- **WHEN** the same request class has at least 30 samples including five long requests within seven days
-- **THEN** AgentHub MAY use the highest observed usage-to-byte ratio with a 25% uplift while retaining the window guard; unsampled and multimodal requests remain conservatively estimated.
+#### Scenario: Restart and resume
+- **WHEN** a paused task is resumed after application restart
+- **THEN** completed stages and tools are reused and dependent tasks remain blocked until their prerequisites complete.
 
-### Requirement: Context settings SHALL not override model limits
-User input and output controls MUST be clamped by exact model capability; unknown model IDs MUST NOT inherit an unverified 1M window.
+### Requirement: Provider overflow SHALL receive bounded recovery
+Explicit context overflow SHALL force compaction and retry the model request at most twice. Authentication and rate-limit errors SHALL retain their original semantics. Persistent overflow or uncompressible protected content SHALL pause with an actionable reason.
 
-#### Scenario: User selects a 1M operational cap for a smaller model
-- **WHEN** the selected model has a verified window below 1M
-- **THEN** the effective request cap stays below the verified window after output and guard reserves.
+### Requirement: SDK context SHALL match application summaries
+Claude and Codex SHALL use native compaction and observable safe boundaries. Application compaction SHALL invalidate old handles before rebuilding with retained context and completed-operation records. Tools SHALL NOT be interrupted to compact. OAuth-only summary requests SHALL use the same SDK rather than an unrelated provider.
 
-### Requirement: SDK agents SHALL use session resume plus summaries
+#### Scenario: Compaction after a completed SDK turn fails
+- **WHEN** the user resumes after fixing summary access
+- **THEN** only compaction is retried; the completed SDK turn is not executed again.
 
-Claude Code and Codex adapters SHALL rely on SDK session continuation and may receive AgentHub context summaries prefixed to new user prompts.
-
-#### Scenario: Codex session continues
-- **WHEN** a conversation already has a cached Codex thread id
-- **THEN** CodexAdapter resumes the thread instead of replaying full chat history.
-
-### Requirement: Pinned messages SHALL be preserved in context
-
-Pinned messages MUST remain available to context construction even when older unpinned history is summarized or trimmed.
-
-#### Scenario: User pins a message
-- **WHEN** context is built after compaction
-- **THEN** the pinned message is represented separately from the summary.
-
-### Requirement: Sub-agent prompts SHALL not duplicate global history
-
-Orchestrator-dispatched child runs MUST use their isolated task prompt and skip generic conversation history injection.
-
-#### Scenario: Orchestrator dispatches a child task
-- **WHEN** `overridePrompt` is set
-- **THEN** AgentRunner does not call `buildHistoryFor` for that child run.
-
-### Requirement: Context compaction SHALL clear SDK sessions
-
-Compacting conversation history MUST clear SDK session caches whose internal state no longer matches the database history.
-
-#### Scenario: Conversation is compacted
-- **WHEN** compaction writes a new summary covering old messages while retaining their source rows
-- **THEN** Claude Code and Codex session ids for that conversation are cleared.
+### Requirement: Child runs SHALL retain isolated prompts
+Orchestrator child runs SHALL not receive duplicated generic conversation history. Stage prompts, outputs and tool evidence SHALL remain stable across pause/resume.
