@@ -99,6 +99,8 @@ export class CustomAgentAdapter implements AgentPlatformAdapter {
       if (restored.completed) return
       if (restored.pendingTool || pendingContextCalls(restored.messages).length) throw new ContextPausedError('工具执行结果未确认，已保留现场；请先核对副作用，不能自动重跑。')
       messages = restored.messages
+      // Fresh runtime health evidence must supersede a checkpoint's stale configuration claims.
+      messages = messages.map((message, index) => index === 0 && message.role === 'system' ? { role: 'system', content: systemPrompt } : message)
       currentUserIndex = restored.currentUserIndex
       turn = restored.turn
       providerRecoveries = restored.progress?.state === 'paused' ? 0 : restored.providerRecoveries

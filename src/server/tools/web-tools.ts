@@ -1,10 +1,22 @@
 import { z } from 'zod'
 import { getWebToolKey } from '@/server/web-tool-settings'
 import { runWebTool } from '@/server/web-tools-service'
+import { probeWebTool } from '@/server/web-tool-health'
 import type { ToolContext, ToolDef } from './types'
 
 export const webSearchShape = { query: z.string().trim().min(1).max(2000), maxResults: z.number().int().min(1).max(10).optional() }
 export const webFetchShape = { url: z.string().url().max(2048) }
+export const webStatusShape = { tool: z.enum(['web_search', 'web_fetch']) }
+export const webStatusTool: ToolDef = {
+  name: 'web_tool_status',
+  description: 'Check CURRENT web tool availability with one real bounded request (may use provider credits). Required before claiming a tool unavailable based on history. On success immediately continue the user task with that tool.',
+  parameters: { type: 'object', properties: { tool: { type: 'string', enum: ['web_search', 'web_fetch'] } }, required: ['tool'], additionalProperties: false },
+  async handler(args, ctx) {
+    const parsed = z.object(webStatusShape).strict().safeParse(args)
+    if (!parsed.success) return { ok: false, error: 'Invalid web status arguments.' }
+    return { ok: true, value: await probeWebTool(parsed.data.tool, ctx.abortSignal) }
+  },
+}
 const Search = z.object(webSearchShape).strict()
 const Fetch = z.object(webFetchShape).strict()
 

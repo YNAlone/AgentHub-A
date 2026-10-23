@@ -1,4 +1,5 @@
 import { withWebTools } from '@/shared/web-tools'
+import { recheckHistoricalWebFailure, webToolRuntimeGuidance } from './web-tool-health'
 import { newMessageId } from './ids'
 import { contextStage, readCheckpoint, writeCheckpoint, readJournal, writeJournal } from './context-checkpoints'
 import { ContextPausedError, workingMessageKey } from './working-context'
@@ -2059,6 +2060,8 @@ async function buildAdapterInput(
   systemPromptWithWorkspace += memoryBlock
   const toolGuidance = buildAgentHubToolGuidance(agent, toolNames, workspace)
   if (toolGuidance) systemPromptWithWorkspace += '\n\n' + toolGuidance
+  // Refresh configuration independently of historical messages or remembered tool errors.
+  systemPromptWithWorkspace += '\n\n' + webToolRuntimeGuidance()
 
   // Key 优先级：agent.apiKey (per-agent) > app_settings.* (用户全局自填) > adapter 内部 fallback env var
   // 只在 per-agent 字段为空时才注入全局 settings，避免覆盖用户的精细配置
@@ -2117,6 +2120,9 @@ async function buildAdapterInput(
   // System/memory edits must not hide the original checkpoint and replay completed operations.
   const stage = contextStage(prompt, '', [])
   const saved = readCheckpoint(runId, stage)
+  // A historical outage must be checked before the model can repeat it as current fact.
+  systemPromptWithWorkspace += await recheckHistoricalWebFailure(
+    [history, prompt, saved?.checkpoint.messages], activeRuns.get(runId)?.signal ?? AbortSignal.timeout(20_000))
   let revision = saved?.revision ?? 0
   let latest = saved?.checkpoint ?? null
   protectedMessageKeys = latest?.protectedMessageKeys ?? protectedMessageKeys

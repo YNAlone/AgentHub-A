@@ -11,8 +11,8 @@ it('adds registered web tools to legacy and empty Agent lists without duplicates
   expect(toolRegistry.resolve(withWebTools([])).map((tool) => tool.name)).toEqual([...WEB_TOOL_NAMES])
 })
 it('keeps shared web tools in Claude planning and normal MCP sets', () => {
-  const tools = [{ name: 'web_search' }, { name: 'web_fetch' }, { name: 'write_artifact' }]
-  expect(filterAgentHubMcpToolsForRun(['plan_tasks'], tools)).toEqual(tools.slice(0, 2))
+  const tools = [{ name: 'web_search' }, { name: 'web_fetch' }, { name: 'web_tool_status' }, { name: 'write_artifact' }]
+  expect(filterAgentHubMcpToolsForRun(['plan_tasks'], tools)).toEqual(tools.slice(0, 3))
   expect(filterAgentHubMcpToolsForRun([], tools)).toEqual(tools)
 })
 it('includes web tools in Codex planning restrictions without opening its sandbox network', () => {

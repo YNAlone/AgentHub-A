@@ -1,5 +1,5 @@
 import { askUserTool } from './ask-user'
-import { webSearchTool, webFetchTool } from './web-tools'
+import { webSearchTool, webFetchTool, webStatusTool } from './web-tools'
 import { bashTool } from './bash'
 import { deployArtifactTool } from './deploy-artifact'
 import { deployWorkspaceTool } from './deploy-workspace'
@@ -64,6 +64,7 @@ function buildRegistry(): ToolRegistry {
   const reg = new ToolRegistry()
   reg.register(webSearchTool)
   reg.register(webFetchTool)
+  reg.register(webStatusTool)
   reg.register(writeArtifactTool)
   reg.register(readArtifactTool)
   reg.register(deployArtifactTool)

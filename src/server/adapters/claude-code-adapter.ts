@@ -1,4 +1,4 @@
-import { webSearchTool, webFetchTool, webSearchShape, webFetchShape } from '@/server/tools/web-tools'
+import { webSearchTool, webFetchTool, webStatusTool, webSearchShape, webFetchShape, webStatusShape } from '@/server/tools/web-tools'
 import {
   AbortError,
   createSdkMcpServer,
@@ -62,6 +62,7 @@ const PLAN_TASKS_TOOL_NAME = 'plan_tasks'
 const CLAUDE_PLAN_STAGE_BUILTIN_TOOLS = ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch']
 const CLAUDE_PLAN_STAGE_AGENTHUB_TOOLS = new Set([
   'web_search',
+  'web_tool_status',
   'web_fetch',
   PLAN_TASKS_TOOL_NAME,
   'ask_user',
@@ -121,6 +122,11 @@ export class ClaudeCodeAdapter implements AgentPlatformAdapter {
     }
     const isPlanStage = input.toolNames.includes(PLAN_TASKS_TOOL_NAME)
     const mcpTools = [
+        // Use the same live health check as Custom and Codex, including plan-stage calls.
+        tool('web_tool_status', webStatusTool.description, webStatusShape, async (args) => {
+          const result = await webStatusTool.handler(args, toolCtx)
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result.ok ? result.value : { error: result.error }) }], isError: !result.ok }
+        }),
         // Share handlers across adapters and planning stages.
         tool('web_search', webSearchTool.description, webSearchShape, async (args) => {
           const result = await webSearchTool.handler(args, toolCtx)

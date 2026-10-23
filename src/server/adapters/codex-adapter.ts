@@ -40,6 +40,7 @@ const DEFAULT_MODEL = 'gpt-5-codex'
 const PLAN_TASKS_TOOL_NAME = 'plan_tasks'
 const CODEX_PLAN_STAGE_AGENTHUB_TOOLS = [
   'web_search',
+  'web_tool_status',
   'web_fetch',
   PLAN_TASKS_TOOL_NAME,
   'ask_user',

@@ -13,6 +13,8 @@ export async function* sdkWorkingContext(adapter: AgentPlatformAdapter, input: A
     { role: 'system', content: input.systemPrompt }, ...(input.history ?? []), { role: 'user', content: input.prompt },
   ]
   let currentUserIndex = control.restored?.currentUserIndex ?? messages.length - 1
+  // Keep checkpoint budgeting aligned with the fresh system instructions sent to the SDK.
+  messages = messages.map((message, index) => index === 0 && message.role === 'system' ? { role: 'system', content: input.systemPrompt } : message)
   let recoveries = control.restored?.progress?.state === 'paused' ? 0 : control.restored?.providerRecoveries ?? 0
   let force = control.restored?.progress?.state === 'paused'
   let completed = control.restored?.completed ?? false

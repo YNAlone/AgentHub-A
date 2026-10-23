@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { pendingQuestions } from '@/server/pending-questions'
+import { probeWebTool, questionsClaimWebUnavailable, webCapabilityForClaim } from '@/server/web-tool-health'
 import type { AskUserAnswer } from '@/shared/types'
 
 import type { ToolDef } from './types'
@@ -84,6 +85,13 @@ export const askUserTool: ToolDef = {
       return { ok: false, error: `Invalid args: ${parsed.error.message}` }
     }
 
+    // Revalidate explicit availability claims before creating a user-blocking question.
+    if (questionsClaimWebUnavailable(parsed.data.questions)) {
+      const status = await probeWebTool(webCapabilityForClaim(parsed.data.questions), ctx.abortSignal)
+      if (ctx.abortSignal.aborted) return { ok: false, error: 'Tool availability check cancelled.' }
+      if (status.available) return { ok: false, error: `未向用户提问：${JSON.stringify(status)} 请调用 ${status.tool} 执行原任务；不要要求用户重新配置或确认继续。` }
+      parsed.data.questions[0].question += `\n服务端本次校验：${status.message}（${status.checkedAt}）`
+    }
     const pending = pendingQuestions.register({
       conversationId: ctx.conversationId,
       agentId: ctx.agentId,
