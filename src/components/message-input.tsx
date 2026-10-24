@@ -247,6 +247,9 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
   const [clearingHistory, setClearingHistory] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const submission = useRef<{ key: string; id: string } | null>(null)
+  const sendingRef = useRef(false)
   const [aborting, setAborting] = useState(false)
   const [uploading, setUploading] = useState<Array<{ tempId: string; name: string }>>([])
 
@@ -697,7 +700,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
       return
     }
 
-    if ((!text && !hasAttachments) || sending || isRunning) return
+    if ((!text && !hasAttachments) || sending || sendingRef.current) return
 
     const exactSlashCommand = slashCommands.find((command) => command.command === text)
     if (exactSlashCommand) {
@@ -710,7 +713,10 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
       ? `<quoted_selection source="${pendingQuote.sourceLabel}"${pendingQuote.artifactId ? ` artifactId="${pendingQuote.artifactId}"` : ''}${pendingQuote.filePath ? ` filePath="${pendingQuote.filePath}"` : ''}>\n${pendingQuote.text}\n</quoted_selection>\n\n${text}`
       : text
 
-    const tempId = `temp_${nanoid()}`
+    // Reuse the request identity after a lost response so retrying cannot enqueue a duplicate.
+    const requestKey = JSON.stringify([conversationId, finalContent, mentionedIds, replyTargetId, pending.map((a) => a.id)])
+    if (submission.current?.key !== requestKey) submission.current = { key: requestKey, id: `temp_${nanoid()}` }
+    const tempId = submission.current.id
     const parentId = replyTargetId ?? undefined
     addLocalUserMessage({
       tempId,
@@ -720,18 +726,14 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
       parentMessageId: parentId,
       attachments: pending,
     })
-    setContent('')
-    setMentionedIds([])
-    setTrigger(null)
-    setSlashTrigger(null)
-    if (pendingQuote) setPendingQuote(null)
     const attachmentIds = pending.map((a) => a.id)
-    clearPendingAttachments(conversationId)
-    if (replyTargetId) setReplyTarget(conversationId, null)
+    sendingRef.current = true
+    setSendError(null)
     setSending(true)
 
     try {
       const result = await sendMessageAPI(conversationId, {
+        clientMessageId: `msg_client_${tempId}`,
         content: finalContent,
         mentionedAgentIds: mentionedIds,
         parentMessageId: parentId,
@@ -739,9 +741,19 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
       })
       replaceLocalMessageId(tempId, result.messageId)
       upsertReturnedMessages(result.messages)
+      setContent('')
+      setMentionedIds([])
+      setTrigger(null)
+      setSlashTrigger(null)
+      if (pendingQuote) setPendingQuote(null)
+      clearPendingAttachments(conversationId)
+      if (replyTargetId) setReplyTarget(conversationId, null)
+      submission.current = null
     } catch (err) {
-      console.error('[MessageInput] send failed', err)
+      useAppStore.getState().removeMessages(conversationId, [tempId])
+      setSendError(err instanceof Error && err.message.includes('401') ? '配对已失效，输入已保留。请完成配对后重试。' : '发送失败，输入和附件已保留，请重试。')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -773,6 +785,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
 
   return (
     <div data-surface="composer" className="relative shrink-0 bg-background p-3">
+      {sendError && <p role="alert" className="mb-2 text-sm text-destructive">{sendError}</p>}
       {/* 引用预览 */}
       {replyMessage && (
         <div className="mb-2">
@@ -953,13 +966,13 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
             planReview
               ? '对计划提修改意见，或点上方执行/拒绝…'
               : isRunning
-                ? '当前有 Agent 正在响应…'
+                ? '可继续输入；发送后排队，当前任务结束后自动执行'
                 : isGroup
                   ? '输入消息，@ 指定 Agent，Enter 发送，Shift+Enter 换行'
                   : '输入消息，Enter 发送，Shift+Enter 换行'
           }
           className="min-h-[44px] max-h-40 resize-none"
-          disabled={composerLocked}
+          disabled={sending}
         />
 
         {/* 文件上传 */}
@@ -980,7 +993,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
             size="icon"
             variant="ghost"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isRunning}
+            disabled={sending}
             title="附件 / 图片"
           >
             <Paperclip className="size-4" />
@@ -1016,17 +1029,19 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
             disabled={aborting}
             size="icon"
             variant="destructive"
-            title="中止全部"
+            title="停止当前任务"
             data-testid="composer-abort"
           >
             <Square className="size-4 fill-current" />
           </Button>
-        ) : (
+        ) : null}
+        {/* Sending enqueues another turn; stopping remains a separate action. */}
+        {(
           <Button
             onClick={() => void submit()}
             disabled={(!content.trim() && pending.length === 0) || sending}
             size="icon"
-            title="发送 (Enter)"
+            title={isRunning ? '加入队列 (Enter)' : '发送 (Enter)'}
             data-testid="composer-send"
           >
             <Send className="size-4" />

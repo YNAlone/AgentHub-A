@@ -96,7 +96,7 @@ export const messages = sqliteTable(
 
     parts: text('parts', { mode: 'json' }).$type<MessagePart[]>().notNull(),
 
-    status: text('status', { enum: ['streaming', 'complete', 'error', 'aborted'] }).notNull(),
+    status: text('status', { enum: ['queued', 'streaming', 'complete', 'error', 'aborted'] }).notNull(),
     parentMessageId: text('parent_message_id'),
     mentionedAgentIds: text('mentioned_agent_ids', { mode: 'json' })
       .$type<string[]>()
@@ -211,6 +211,13 @@ export const agentRuns = sqliteTable(
 )
 
 /** RunUsage —— 一次 run 累计的 token 用量。所有字段 0+ 整数；不返回的字段 0 不是 null（聚合好处理）。 */
+export const conversationMessageQueue = sqliteTable('conversation_message_queue', {
+  messageId: text('message_id').primaryKey().references(() => messages.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }),
+  agentIds: text('agent_ids').notNull(), runIds: text('run_ids').notNull().default('[]'),
+  state: text('state', { enum: ['queued', 'dispatched'] }).notNull().default('queued'), createdAt: integer('created_at').notNull(),
+})
+
 export const runContextCheckpoints = sqliteTable('run_context_checkpoints', {
   runId: text('run_id').notNull(), stage: text('stage').notNull(), revision: integer('revision').notNull().default(0),
   value: text('value').notNull(), updatedAt: integer('updated_at').notNull(),

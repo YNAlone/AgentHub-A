@@ -7,5 +7,7 @@ export async function register() {
     await import('@/server/personal-runtime')
     const { startMemoryWorker } = await import('@/server/memory-extraction')
     startMemoryWorker()
+    const { startMessageQueueWorker } = await import('@/server/message-queue')
+    startMessageQueueWorker()
   }
 }

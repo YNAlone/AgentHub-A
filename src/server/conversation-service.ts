@@ -5,7 +5,8 @@ import path from 'node:path'
 
 import { and, desc, eq, gt, gte, inArray } from 'drizzle-orm'
 
-import { db, schema } from '@/db/client'
+import { db, schema, sqlite } from '@/db/client'
+import { drainMessageQueue, startMessageQueueWorker } from './message-queue'
 import type { ConversationWithMeta, MessageRow } from '@/db/schema'
 import { PIN_LIMIT_PER_CONVERSATION } from '@/shared/constants'
 import type { MessagePart } from '@/shared/types'
@@ -533,6 +534,7 @@ export async function addAgentsToConversation(args: AddAgentsArgs): Promise<Conv
 
 // ─── 发消息 ──────────────────────────────────────────────
 export interface SendMessageArgs {
+  clientMessageId?: string
   conversationId: string
   content: string
   mentionedAgentIds?: string[]
@@ -556,7 +558,7 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
   }
 
   const now = Date.now()
-  const messageId = newMessageId()
+  const messageId = args.clientMessageId ?? newMessageId()
   const parts: MessagePart[] = []
   if (args.content && args.content.trim()) {
     parts.push({ type: 'text', content: args.content })
@@ -589,16 +591,37 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
     }
   }
 
-  await db.insert(schema.messages).values({
-    id: messageId,
-    conversationId: args.conversationId,
-    role: 'user',
-    parts,
-    status: 'complete',
-    mentionedAgentIds: args.mentionedAgentIds ?? [],
-    parentMessageId: args.parentMessageId ?? null,
-    createdAt: now,
-  })
+  const deployIntent = parts.length === 1 && !args.parentMessageId && !args.mentionedAgentIds?.length && !args.attachmentIds?.length
+    ? parseDeployCommand(args.content) : null
+  const agentsInConv = await db.query.agents.findMany({ where: (a, { inArray }) => inArray(a.id, conv.agentIds) })
+  const responders = decideResponders(conv, args.mentionedAgentIds ?? [], agentsInConv)
+  // Persist the message and its FIFO entry together; a retry cannot enqueue duplicate work.
+  const inserted = sqlite.transaction(() => {
+    const existing = db.select().from(schema.messages).where(eq(schema.messages.id, messageId)).get()
+    if (existing) {
+      if (existing.conversationId !== args.conversationId || existing.role !== 'user' || JSON.stringify(existing.parts) !== JSON.stringify(parts)
+        || existing.parentMessageId !== (args.parentMessageId ?? null) || JSON.stringify(existing.mentionedAgentIds) !== JSON.stringify(args.mentionedAgentIds ?? [])) throw new Error('Client message ID conflicts with another message')
+      return false
+    }
+    if (deployIntent && sqlite.prepare("SELECT 1 FROM agent_runs WHERE conversation_id=? AND status IN ('queued','running','compacting','paused','interrupted') LIMIT 1").get(args.conversationId)) throw new Error('请等待当前任务结束后再发布。')
+    db.insert(schema.messages).values({
+      id: messageId,
+      conversationId: args.conversationId,
+      role: 'user',
+      parts,
+      status: deployIntent ? 'complete' : 'queued',
+      mentionedAgentIds: args.mentionedAgentIds ?? [],
+      parentMessageId: args.parentMessageId ?? null,
+      createdAt: now,
+    }).run()
+    if (!deployIntent) sqlite.prepare('INSERT INTO conversation_message_queue(message_id,conversation_id,agent_ids,created_at) VALUES (?,?,?,?)')
+      .run(messageId, args.conversationId, JSON.stringify(responders), now)
+    return true
+  }).immediate()
+  if (!inserted) {
+    const queued = sqlite.prepare('SELECT run_ids FROM conversation_message_queue WHERE message_id=?').get(messageId) as { run_ids: string } | undefined
+    return { messageId, runIds: queued ? JSON.parse(queued.run_ids) as string[] : [] }
+  }
 
   await db
     .update(schema.conversations)
@@ -617,7 +640,7 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
       role: 'user',
       agentId: null,
       parts,
-      status: 'complete',
+      status: deployIntent ? 'complete' : 'queued',
       parentMessageId: args.parentMessageId ?? null,
       mentionedAgentIds: args.mentionedAgentIds ?? [],
       runId: null,
@@ -626,13 +649,6 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
     },
   })
 
-  const deployIntent =
-    parts.length === 1 &&
-    !args.parentMessageId &&
-    !(args.mentionedAgentIds && args.mentionedAgentIds.length > 0) &&
-    !(args.attachmentIds && args.attachmentIds.length > 0)
-      ? parseDeployCommand(args.content)
-      : null
   if (deployIntent) {
     const deploy = await handleDeployCommand({
       conversationId: args.conversationId,
@@ -642,24 +658,10 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
     return { messageId, runIds: [], messages: [deploy.message], deploy }
   }
 
-  // 决定 responder
-  const agentsInConv = await db.query.agents.findMany({
-    where: (a, { inArray }) => inArray(a.id, conv.agentIds),
-  })
-  const responders = decideResponders(conv, args.mentionedAgentIds ?? [], agentsInConv)
-
-  const runIds: string[] = []
-  const { AgentRunner } = await getAgentRunner()
-  for (const agentId of responders) {
-    const { runId } = AgentRunner.run({
-      agentId,
-      conversationId: args.conversationId,
-      triggerMessageId: messageId,
-    })
-    runIds.push(runId)
-  }
-
-  return { messageId, runIds }
+  startMessageQueueWorker()
+  await drainMessageQueue()
+  const queued = sqlite.prepare('SELECT run_ids FROM conversation_message_queue WHERE message_id=?').get(messageId) as { run_ids: string }
+  return { messageId, runIds: JSON.parse(queued.run_ids) as string[] }
 }
 
 /**
@@ -767,6 +769,13 @@ export async function withdrawLatestUserMessage(
   })
   if (!msg) throw new Error(`Message not found: ${messageId}`)
   if (msg.role !== 'user') throw new Error('Only user messages can be withdrawn')
+  // Removing queued input must never delete replies still being written for the previous turn.
+  if (msg.status === 'queued') {
+    const removed = sqlite.prepare("DELETE FROM messages WHERE id=? AND status='queued'").run(messageId)
+    if (!removed.changes) throw new Error('消息已开始执行，请停止当前任务后再操作。')
+    eventBus.publish({ type: 'message.removed', conversationId, timestamp: Date.now(), messageIds: [messageId], artifactIds: [] })
+    return { deletedMessageIds: [messageId], deletedArtifactIds: [] }
+  }
 
   // 校验是会话最后一条 user message（防误操作 / 防过期请求）
   const latestUser = await db.query.messages.findFirst({
@@ -885,6 +894,7 @@ export async function regenerateLatestResponse(
     orderBy: [desc(schema.messages.createdAt)],
   })
   if (!latestUser) throw new Error('No user message to regenerate from')
+  if (latestUser.status === 'queued') throw new Error('消息仍在排队，无需重新生成。')
 
   // abort 任何还在跑的 run（不一定有）
   const runsToAbort = await db.query.agentRuns.findMany({

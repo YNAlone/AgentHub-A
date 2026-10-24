@@ -90,7 +90,7 @@ export interface MobileMessage {
   role: 'user' | 'agent' | 'system'
   agentId: string | null
   parts: MobileMessagePart[]
-  status: 'streaming' | 'complete' | 'error' | 'aborted'
+  status: 'queued' | 'streaming' | 'complete' | 'error' | 'aborted'
   createdAt: number
 }
 

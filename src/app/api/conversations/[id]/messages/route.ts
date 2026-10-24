@@ -9,6 +9,7 @@ interface RouteContext {
 
 const SendBody = z
   .object({
+    clientMessageId: z.string().regex(/^msg_client_[A-Za-z0-9_-]{1,80}$/).optional(),
     content: z.string().default(''),
     mentionedAgentIds: z.array(z.string()).optional(),
     parentMessageId: z.string().optional(),
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
     const result = await sendMessage({
       conversationId: id,
+      clientMessageId: parsed.data.clientMessageId,
       content: parsed.data.content,
       mentionedAgentIds: parsed.data.mentionedAgentIds,
       parentMessageId: parsed.data.parentMessageId,

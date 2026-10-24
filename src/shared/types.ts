@@ -469,7 +469,7 @@ export interface MessageRecord {
   role: 'user' | 'agent' | 'system'
   agentId: string | null
   parts: MessagePart[]
-  status: 'streaming' | 'complete' | 'error' | 'aborted'
+  status: 'queued' | 'streaming' | 'complete' | 'error' | 'aborted'
   parentMessageId: string | null
   mentionedAgentIds: string[]
   runId: string | null

@@ -136,6 +136,13 @@ const DDL: string[] = [
     finished_at INTEGER
   )`,
   `CREATE INDEX IF NOT EXISTS idx_runs_parent ON agent_runs(parent_run_id)`,
+  // Reserve run identities atomically when a pending message leaves the conversation FIFO.
+  `CREATE TABLE IF NOT EXISTS conversation_message_queue (
+    message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    agent_ids TEXT NOT NULL, run_ids TEXT NOT NULL DEFAULT '[]',
+    state TEXT NOT NULL DEFAULT 'queued', created_at INTEGER NOT NULL
+  )`,
 
   // Journals are written before asynchronous run insertion; cleanup follows run deletion instead of a FK.
   `CREATE TABLE IF NOT EXISTS run_context_checkpoints (

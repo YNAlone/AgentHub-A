@@ -2592,7 +2592,7 @@ async function buildSubAgentPrompt(
   const pinIds = conv?.pinnedMessageIds ?? []
   const pinned = pinIds.length
     ? await db.query.messages.findMany({
-        where: inArray(schema.messages.id, pinIds),
+        where: and(inArray(schema.messages.id, pinIds), eq(schema.messages.status, 'complete')),
         orderBy: [schema.messages.createdAt],
       })
     : []

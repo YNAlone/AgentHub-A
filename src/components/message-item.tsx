@@ -191,6 +191,7 @@ function MessageItemImpl({ message }: { message: MessageRow }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium">{name}</span>
           <span>{formatTime(message.createdAt)}</span>
+          {message.status === 'queued' && <span role="status">排队中 · 等待当前任务结束</span>}
           {isBookmarked && (
             <span className="text-amber-500" title="已收藏（导航书签）">
               <Star className="size-3 fill-amber-400" />
