@@ -312,3 +312,5 @@ These events are pass-through and are not persisted. The pending queue is recove
 
 ## 上下文运行事件（2026-10-23）
 新增 run.context：runId、state(running/compacting/paused)、message、可选 before/after（估算 tokens）、attempt。事件随 SSE 日志持久化并更新 run 状态。暂停不发送失败的 run.end；恢复复用 run ID。压缩成功通知保留前后估算和摘要用量。
+
+Queued user messages use message.added with status queued; dispatch republishes the same ID with status complete. Snapshot/SSE/HTTP status unions include queued; message ID upserts preserve reconciliation.

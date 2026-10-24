@@ -1,0 +1,2 @@
+# Design
+Persist messages with queued status plus a conversation_message_queue record. Claim the oldest eligible message in a SQLite transaction, create stable run IDs and recovery journals before starting execution, then publish the message status update. A single server worker polls for terminal runs; restarts never replay an already-dispatched message. User message IDs provide idempotency. Pending messages are excluded from model history. UI keeps stop and send separate, labels queued messages, and preserves the existing plan-revision interaction.

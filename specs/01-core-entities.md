@@ -309,3 +309,6 @@ Conversation ─1:1─ Workspace
 
 ## 可恢复上下文状态（2026-10-23）
 AgentRun.status 新增 compacting、paused；paused 无 finishedAt，不是 failed，不解锁下游。resume 复用原 ID，取消使用 aborted。检查点与原文引用见 Spec 16 §4。
+
+### Conversation message FIFO
+Messages accept optional clientMessageId for idempotency and may have status queued. The composer remains editable during Agent execution; Send enqueues, Stop cancels current work separately. The durable conversation_message_queue table stores message_id (FK cascade), conversation_id (FK cascade), agent_ids, run_ids, state and created_at. FIFO claims atomically reserve run IDs and journals. All runs in the conversation must be terminal before dispatching the next message; paused/interrupted work blocks, independent conversations do not. Queued input stays out of model/pinned history; a conversation summary generated while input waited is invalidated at dispatch because it could not cover that input. Restart recovers already-claimed runs as interrupted without replay; unclaimed messages remain queued. Pending user input can be withdrawn without removing the previous turn's response. Slash deployment and plan-revision retain their existing dedicated behavior. Failed sends retain draft and attachment state; a repeated identical submission reuses its client ID.
