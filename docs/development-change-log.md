@@ -207,3 +207,28 @@ Enabled typing and enqueueing during an active response; send and stop are separ
 Validation: full unit suite 314 passed / 5 skipped; an additional atomic-claim/recovery case and all 5 queue tests passed afterward. Typecheck and targeted lint passed; typecheck was rerun after E2E stopped writing Next generated route types. All 5 browser scenarios passed (3 existing chat scenarios, running-input/FIFO/reload, and 401 draft preservation). db:push passed on a fresh disposable directory; production uses additive bootstrap migration only. No model credentials or user messages were used for tests.
 
 Deployment: 302a8eb deployed with no active runs; backup /home/ubuntu/backups/agenthub-queue-20261024T025534Z (UTC timestamp). All 4 conversations, 45 messages, 5 agents and 5 artifacts preserved; configuration digest, environment and local-auth file unchanged; integrity_check=ok and queue table present. Real Edge through the existing SSH tunnel verified typing/clearing and send control without sending production messages or page errors.
+
+## 2026-10-25 — 修复合并审查发现的任务归属与容量问题
+
+- 根因：排队输入时间早于上一轮最终回复，撤回/编辑/重新生成按时间窗清理会误删上一轮产物；35% 压缩目标被作为硬门槛；保存容量覆盖将默认输出预留误作模型输出能力上限。
+- 清理改为 conversationId + triggerMessageId 定位根任务，并沿 parentRunId 收集子任务，按 message.runId 删除所属输出；保留其他消息引用的共享产物，清除已删任务的检查点/日志并废弃失效会话摘要。取消等待真实运行收尾，移除原有固定 500ms 等待。
+- 60% 继续作为压缩触发点，35% 为优先目标；有效缩小且仍能容纳的摘要允许继续，不可压缩输入本身能容纳时直接继续；保留摘要失败重试、不可容纳暂停与供应商超限恢复行为。
+- 保存容量配置保留已知模型最大输出能力，明确的 65,536 输出额度不再被默认 8,192 预留覆盖；已确认端点与其他端点仍隔离。
+- 回归先红后绿：6 个新增用例复现原有缺陷后通过；另新增真实 AgentRunner 取消收尾集成测试（模型适配器使用可控替身），验证不会在删除后再落入错误消息。
+- 验证：pnpm test 全量 55 文件通过、3 文件跳过，322 项通过、5 项跳过；pnpm typecheck、pnpm lint、git diff --check 通过。确定性时间夹具调整后消息队列 8 项再次通过。测试使用临时数据库，未改服务器数据、未部署或合并 main；未重跑真实供应商及浏览器验收。
+
+## 2026-10-26 — 对话输入框支持文件拖放
+
+- 输入区域接受单个或多个文件/图片拖入，显示松开上传提示；嵌套元素间拖动不闪烁，阻止文件拖放导致浏览器跳转，文本拖动保持默认行为。文件夹拖入给出明确提示。
+- 复用附件按钮的上传接口、服务端 20MB 单文件校验、附件预览与移除；Agent 运行中仍可添加附件。上传期间禁用发送并拦截 Enter，避免缺少尚未返回的附件 ID。
+- 上传错误在输入区域显示文件名与原因，保留文本草稿和已成功上传附件；不再只记录控制台错误。
+- 浏览器验收：pnpm e2e -- e2e/attachment-drop.spec.ts，2 项通过（真实多文件上传/移除/发送，模拟失败与上传等待/草稿保留）；pnpm typecheck、pnpm lint、修改文件 ESLint 和 git diff --check 通过。使用隔离 E2E 数据目录，未部署服务器。
+
+## 2026-11-20 — 桌面认证目录修复与合并前验收
+
+- 根因：服务端将 local-auth.json 写入实际 AGENTHUB_DATA_DIR（默认 userData/data），Electron 主进程却从 userData 根目录读取，导致首次启动 ENOENT；上级目录存在旧文件时则生成无法通过服务端验证的 Cookie。
+- 主进程改为读取初始化后的 AGENTHUB_DATA_DIR，兼容默认路径和调用方自定义路径，不改变认证协议、凭据内容或安全边界。
+- 新增 electron/main.test.mjs 并纳入 pnpm test，执行真实 main/paths 逻辑和服务端认证文件创建，替换 Electron 窗口及服务启动边界。默认目录、自定义目录、上级旧凭据三种场景在修复前均失败，修复后均通过，并验证生成的 Cookie 可被服务端接受。
+- 本次验证：pnpm test 为 325 通过、5 跳过；pnpm typecheck、pnpm lint、pnpm electron:tsc 通过；附件拖放 Playwright 测试 2 项通过。对既有未提交业务修改进行了独立只读复核，未发现确认的合并阻塞。
+- 实际 Electron 冒烟使用重编译后的主进程、此前本轮打包检查构建成功的生产 standalone 和临时 AGENTHUB_DATA_DIR，验证主窗口加载本机首页且受保护 /api/agents 返回 200；未调用真实模型。该检查不是 NSIS 安装后的干净机器验收，也未发布安装包或部署服务器。
+- 本轮整理现有规格、业务修复、拖放交互、说明文档和毕设材料为独立主题提交；合并与远端同步状态以 Git 分支记录为准。
