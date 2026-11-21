@@ -79,7 +79,10 @@ if (!gotLock) {
 
     // Packaged desktop reads its own protected local bootstrap file, never an HTTP secret endpoint.
     if (!isDev) {
-      const credentials = JSON.parse(readFileSync(path.join(app.getPath('userData'), 'local-auth.json'), 'utf8')) as { key: string }
+      // Match the server's effective data directory, including caller overrides.
+      const dataDir = process.env.AGENTHUB_DATA_DIR
+      if (!dataDir) throw new Error('Desktop authentication requires an initialized AGENTHUB_DATA_DIR')
+      const credentials = JSON.parse(readFileSync(path.join(dataDir, 'local-auth.json'), 'utf8')) as { key: string }
       const expiry = String(Date.now() + 86400000)
       const signature = createHmac('sha256', credentials.key).update(expiry).digest('hex')
       await session.defaultSession.cookies.set({ url, name: 'agenthub_session', value: `${expiry}.${signature}`, httpOnly: true, sameSite: 'strict', path: '/', expirationDate: Number(expiry) / 1000 })
