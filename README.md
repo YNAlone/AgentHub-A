@@ -1,4 +1,6 @@
-# AgentHub
+# AgentHub-A
+
+> **Modified fork — updated 2026-10-26.** Maintained in [YNAlone/AgentHub-A](https://github.com/YNAlone/AgentHub-A), based on [lizyoko9/bitdance-agenthub](https://github.com/lizyoko9/bitdance-agenthub). This independently maintained fork is not an official upstream release. Upstream authors retain copyright in their contributions; this derivative continues under **AGPL-3.0-only**. See [License and attribution](#license-and-attribution).
 
 > This release is for personal use on this computer. Browser pairing is required; remote companion access is disabled. See [local setup](docs/local-personal-quickstart.md), [Spec 16](specs/16-local-personal.md), and [change log](docs/development-change-log.md).
 
@@ -23,10 +25,11 @@ Instead of treating every agent run as an isolated terminal transcript, AgentHub
     <img src="docs/images/agenthub-preview.png" alt="AgentHub multi-agent collaboration and artifact preview" width="100%" />
 </p>
 
-> Current status: active local development. The app is usable as a web app and Electron desktop app; the mobile companion app is under development.
+> Current status: active development of a personal, single-user workspace. Web and Electron entry points are retained; remote/mobile companion access is disabled in this fork. Features below describe this checkout, not a guarantee that every published release or deployed instance includes them.
 
 ## Contents
 
+- [Fork highlights](#fork-highlights)
 - [Why AgentHub](#why-agenthub)
 - [Features](#features)
   - [IM-style agent workspace](#im-style-agent-workspace)
@@ -45,6 +48,25 @@ Instead of treating every agent run as an isolated terminal transcript, AgentHub
 - [Security Model](#security-model)
 - [Known Limits](#known-limits)
 - [Contributing](#contributing)
+- [License and attribution](#license-and-attribution)
+
+---
+
+## Fork highlights
+
+Built on the upstream conversation UI, adapter architecture, Orchestrator, workspace controls and artifact previews, this fork focuses on long-running tasks, recoverability and everyday interaction. Changes and dated verification evidence are recorded in the [development log](docs/development-change-log.md).
+
+| Area | Current behavior |
+| --- | --- |
+| Shared web tools | Custom, Claude and Codex adapters expose Tavily-backed `web_search`, `web_fetch` and `web_tool_status`. Settings include credential validation; current probes help prevent historical missing-key errors from being treated as present facts. |
+| Automatic context compaction | By default, compaction starts at 60% of usable input capacity and aims for 35%. The target is not a pause gate: a shrinking summary that fits may continue above it. Original messages and tool results remain available. |
+| Pause and resume | Summary failures retry after 2s and 5s, then pause with durable checkpoints. Resume retains the run ID and reuses confirmed completed operations; uncertain side effects require verification. |
+| Model-specific capacity | Capacity is scoped to adapter, provider, effective endpoint and model ID. Confirmed 1M profiles are supported without assuming every model has that window; explicit output allowances remain separate from default reserves. |
+| Durable message queue | Type and send while an Agent is working. Messages wait in per-conversation FIFO order and survive refresh; paused/interrupted tasks hold their queue. Withdrawal, editing and regeneration clean up by message/run ownership, not timestamps. |
+| File drag and drop | Drop multiple files or images into the composer, preview/remove attachments and send them with a message. Upload failures retain the draft; sending waits for uploads. Existing 20MB per-file limit applies; folders are not accepted. |
+| Personal workspace | Browser pairing, project-scoped memory, persistent UI/session state and SSE recovery support local single-user use. SSH forwarding can provide access to an instance running on your own server. |
+
+**Verification scope:** Custom/DeepSeek and Claude have recorded live acceptance results. Codex checkpoint/session rebuilding has automated coverage, but live-provider acceptance was skipped after connection failures; it is not claimed as verified. SDK compaction runs at observable safe boundaries, not necessarily before every internal model request. Recent ownership/capacity fixes passed 322 unit/integration assertions; file drag/drop passed two browser scenarios. See the dated log for exact scope and skips.
 
 ---
 
@@ -117,7 +139,7 @@ For local frontend projects, agents can deploy static output directories such as
 ### Desktop and mobile
 
 - Electron desktop packaging is supported.
-- A Capacitor mobile companion app lives in `apps/mobile`.
+- Upstream Capacitor companion code lives in `apps/mobile`; access is disabled in this fork.
 - The intended mobile workflow is companion-client style: phone connects to the desktop AgentHub host over LAN or Tailscale, then observes runs, sends messages, and handles approvals.
 
 ---
@@ -155,7 +177,9 @@ Optional provider setup:
 ## Quick Start
 
 ```bash
-pnpm install
+git clone https://github.com/YNAlone/AgentHub-A.git
+cd AgentHub-A
+pnpm install --frozen-lockfile
 
 # Optional
 cp .env.example .env.local
@@ -167,10 +191,16 @@ pnpm dev
 Open:
 
 ```text
-http://localhost:3000
+http://127.0.0.1:3000
 ```
 
-The app auto-creates the SQLite database and seeds the built-in agents on first startup.
+The app auto-creates the SQLite database and seeds the built-in agents on first startup. In another terminal in the same project directory, run:
+
+```bash
+pnpm local:pair
+```
+
+Enter the displayed code in the browser. If using `AGENTHUB_DATA_DIR`, the app and pairing command must point to the same directory. Browser sessions last 24 hours without automatic renewal. For SSH-forwarded access, run the pairing command on the server hosting AgentHub, not the client computer.
 
 You can configure API keys either in `.env.local` or in the app settings panel. Agent-specific keys override global settings.
 
@@ -181,7 +211,10 @@ ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
 DEEPSEEK_API_KEY=...
 ARK_API_KEY=...
+TAVILY_API_KEY=...  # Optional shared web search/extraction
 ```
+
+For web tools, open Settings → Web tools, save the Tavily key and validate the saved configuration. Validation sends a real provider request and may consume quota. This key is independent of model-provider keys; queries and URLs are sent to Tavily. Authenticated pages and private-network URLs are not supported.
 
 Claude Code can also work from an existing local Claude Code login without a separate Anthropic API key.
 
@@ -255,6 +288,8 @@ Then rerun the failed command.
 ---
 
 ## Mobile Companion
+
+> Upstream companion code is retained for reference/development. This fork currently rejects mobile/remote companion APIs; the commands below do not enable remote access.
 
 Mobile app workspace:
 
@@ -377,6 +412,13 @@ When changing entities, stream events, tools, adapters, persistence, platform be
 
 ---
 
-## License
+## License and attribution
 
-AGPL-3.0-only. See [LICENSE](./LICENSE).
+This modified version is licensed under **GNU Affero General Public License v3.0 only (AGPL-3.0-only)**. The full [LICENSE](./LICENSE) governs; this summary adds no restrictions or exceptions.
+
+- Upstream: [lizyoko9/bitdance-agenthub](https://github.com/lizyoko9/bitdance-agenthub). Thanks to its authors and contributors for the foundation. Original copyright, license and warranty notices remain applicable.
+- Fork source: [YNAlone/AgentHub-A](https://github.com/YNAlone/AgentHub-A). Modification notice updated **2026-10-26**; see [dated changes](docs/development-change-log.md) and Git history. Fork contributors retain copyright in their own contributions; no ownership of upstream work is claimed.
+- Use, modification and commercial distribution are permitted subject to AGPL. Redistributed derivatives must retain required notices, identify modifications and dates, and comply with corresponding-source requirements. The covered derivative as a whole remains under AGPL-3.0-only; third-party dependencies retain their own notices and licenses.
+- If you operate a modified version for users interacting over a network, prominently offer those users free access to its complete Corresponding Source under AGPL §13. Link to the exact deployed version, including modifications and required build/install scripts. A link to upstream or a different release is not sufficient. Publishing this README alone does not implement an in-app source offer or satisfy every distribution obligation.
+
+The software is provided **without warranty**, to the extent permitted by applicable law. See LICENSE §§15–16. The upstream name and links identify provenance and do not imply endorsement.

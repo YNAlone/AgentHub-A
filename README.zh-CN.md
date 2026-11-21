@@ -1,4 +1,6 @@
-# AgentHub
+# AgentHub-A
+
+> **二次开发版本 · 修改说明更新于 2026-10-26。** 本仓库 [YNAlone/AgentHub-A](https://github.com/YNAlone/AgentHub-A) 基于 [lizyoko9/bitdance-agenthub](https://github.com/lizyoko9/bitdance-agenthub) 独立维护，不是上游官方发行版。原作者保留其贡献的版权，本衍生项目继续采用 **AGPL-3.0-only**，详见[许可证与来源](#许可证与来源)。
 
 > 本期为本机个人版：浏览器需要配对，远程伴随访问已关闭。启动与升级请先读[本机使用说明](docs/local-personal-quickstart.md)，实现与验收见 [Spec 16](specs/16-local-personal.md) 和[开发变更记录](docs/development-change-log.md)。
 
@@ -23,10 +25,11 @@ AgentHub 是一个 local-first 的多 Agent 协作工作空间，把 AI 协作�
     <img src="docs/images/agenthub-preview.png" alt="AgentHub 多 Agent 协作与产物预览" width="100%" />
 </p>
 
-> 当前状态：本地开发中。Web 版与 Electron 桌面版已可用；移动伴随端开发中。
+> 当前状态：持续开发中的个人单用户工作空间。保留 Web 与 Electron 入口；本分支关闭远程/移动伴随访问。下述功能以当前检出代码为准，不代表所有已发布版本或部署实例都已包含。
 
 ## 目录
 
+- [本分支亮点](#本分支亮点)
 - [为什么选 AgentHub](#为什么选-agenthub)
 - [功能特性](#功能特性)
   - [IM 式 Agent 工作空间](#im-式-agent-工作空间)
@@ -45,6 +48,25 @@ AgentHub 是一个 local-first 的多 Agent 协作工作空间，把 AI 协作�
 - [安全模型](#安全模型)
 - [已知限制](#已知限制)
 - [参与贡献](#参与贡献)
+- [许可证与来源](#许可证与来源)
+
+---
+
+## 本分支亮点
+
+在上游的会话界面、适配器架构、Orchestrator 调度、工作空间控制和产物预览基础上，本分支重点完善长任务执行、故障恢复和日常交互。具体修改日期与验收证据见[开发变更记录](docs/development-change-log.md)。
+
+| 能力 | 当前行为 |
+| --- | --- |
+| 全 Agent 共享联网工具 | Custom、Claude、Codex 适配器接入基于 Tavily 的 `web_search`、`web_fetch` 和 `web_tool_status`。设置页可校验凭据，运行时探测工具当前状态，减少因历史缺失 Key 记录而误报不可用。 |
+| 自动上下文压缩 | 默认达到可用输入容量的 60% 时触发，优先压至 35%。35% 不是暂停门槛；有效缩小且可容纳即可继续。原始消息与工具结果始终保留。 |
+| 暂停与恢复 | 摘要首次失败后间隔 2 秒、5 秒重试，再失败则保存检查点并暂停。恢复沿用原 run ID，复用已确认完成的操作；无法确认的外部副作用需要核对。 |
+| 按模型配置容量 | 按适配器、供应商、实际端点和模型 ID 隔离容量。支持已确认的 1M 模型配置，不假定所有模型均有 1M 窗口；明确输出额度与默认输出预留分开处理。 |
+| 持久化消息队列 | Agent 工作时仍可输入并发送，新消息按会话先进先出排队，刷新后保留；暂停/中断任务阻塞本会话队列。撤回、编辑和重新生成按消息与任务归属清理，不按时间误删上一轮结果。 |
+| 拖放上传附件 | 多个文件或图片可直接拖入输入框，预览、移除后随消息发送。上传失败保留草稿，上传中暂缓发送。沿用单文件 20MB 限制，暂不支持文件夹。 |
+| 个人工作空间 | 浏览器配对、按项目隔离的记忆、界面/会话状态持久化和 SSE 恢复，服务于本机单用户使用；也可通过 SSH 隧道访问自己服务器上的实例。 |
+
+**验收范围：** Custom/DeepSeek 与 Claude 已有真实服务商验收记录。Codex 检查点和会话重建有自动化覆盖，但因连接失败跳过了真实服务商验收，不宣称已通过。SDK 压缩在可观测安全边界执行，不保证内部每次模型请求前都精确触发。近期归属/容量修复通过 322 项单元与集成断言，拖放上传通过 2 项浏览器用例；完整范围及跳过项见带日期的变更记录。
 
 ---
 
@@ -117,7 +139,7 @@ Agent 可以创建并引用结构化产物：
 ### 桌面与移动端
 
 - 支持 Electron 桌面打包。
-- `apps/mobile` 下有一个 Capacitor 移动伴随端。
+- `apps/mobile` 保留上游 Capacitor 移动伴随端代码，本分支关闭其访问入口。
 - 设想的移动端工作方式是「伴随客户端」：手机通过 LAN 或 Tailscale 连到桌面端的 AgentHub host，然后观察运行、发消息、处理审批。
 
 ---
@@ -155,7 +177,9 @@ Next.js 锁定在 `16.2.6`。如果你要改动框架层的行为，先读 `node
 ## 快速开始
 
 ```bash
-pnpm install
+git clone https://github.com/YNAlone/AgentHub-A.git
+cd AgentHub-A
+pnpm install --frozen-lockfile
 
 # 可选
 cp .env.example .env.local
@@ -167,10 +191,16 @@ pnpm dev
 打开：
 
 ```text
-http://localhost:3000
+http://127.0.0.1:3000
 ```
 
-首次启动时，应用会自动创建 SQLite 数据库并 seed 内置 Agent。
+首次启动时，应用会自动创建 SQLite 数据库并 seed 内置 Agent。在另一个终端、同一项目目录执行：
+
+```powershell
+pnpm local:pair
+```
+
+把显示的配对码填入网页。若设置 `AGENTHUB_DATA_DIR`，应用和配对命令必须使用同一目录。浏览器授权有效 24 小时，目前不会自动续期。通过 SSH 隧道访问时，应在运行 AgentHub 的服务器上读取配对码。
 
 API key 既可以配在 `.env.local`，也可以在应用的设置面板里配。Agent 级别的 key 会覆盖全局设置。
 
@@ -181,7 +211,10 @@ ANTHROPIC_API_KEY=...
 OPENAI_API_KEY=...
 DEEPSEEK_API_KEY=...
 ARK_API_KEY=...
+TAVILY_API_KEY=...  # 可选：共享联网搜索与网页读取
 ```
+
+联网工具请在「设置 → 联网工具」保存 Tavily Key，并校验已保存配置。校验会实际请求服务商，可能消耗额度。它与模型供应商 Key 独立；搜索词和网址会发送给 Tavily，不支持登录页面和内网地址。
 
 Claude Code 也可以直接复用本机已有的 Claude Code 登录，无需单独的 Anthropic API key。
 
@@ -255,6 +288,8 @@ pnpm electron:rebuild
 ---
 
 ## 移动伴随端
+
+> 保留上游伴随端代码供参考和开发。本分支目前拒绝移动/远程伴随 API，下面的构建命令不会开启远程访问。
 
 移动端 workspace：
 
@@ -377,6 +412,13 @@ AgentHub 假定 LLM 的输出是不可信输入。
 
 ---
 
-## License
+## 许可证与来源
 
-学习 / 研究项目。在面向广泛外部使用发布 release 前，请先补上正式 license。
+本修改版本采用 **GNU Affero General Public License v3.0 only（AGPL-3.0-only）**，以完整 [LICENSE](./LICENSE) 为准；下述说明不新增限制或授权例外。
+
+- **上游项目：** [lizyoko9/bitdance-agenthub](https://github.com/lizyoko9/bitdance-agenthub)。感谢原作者和贡献者提供基础能力；原有版权、许可及免责声明继续适用。
+- **二开源码：** [YNAlone/AgentHub-A](https://github.com/YNAlone/AgentHub-A)。修改说明更新于 **2026-10-26**，具体日期、内容见[开发变更记录](docs/development-change-log.md)与 Git 历史。二开贡献者保留其自身贡献的版权，不主张上游代码的所有权。
+- **使用与再分发：** 可以按 AGPL 使用、修改、商业分发；再分发衍生版本时应保留必要声明、标明修改及日期，并履行对应源码义务。受许可覆盖的衍生作品整体继续采用 AGPL-3.0-only；第三方依赖保留各自的许可证与声明。
+- **通过网络提供修改版：** 依 AGPL 第 13 条，应向远程交互用户显著提供免费获取完整对应源码的方式，指向实际部署版本，包含修改及必要的构建/安装脚本。仅链接上游或其他版本不够。README 中的说明本身不等于已经实现应用内源码入口，也不替代发布时的其他义务。
+
+本软件在适用法律允许范围内**不提供担保**，详见 LICENSE 第 15、16 条。引用上游名称和链接是为了说明来源，不代表上游为本分支背书。
