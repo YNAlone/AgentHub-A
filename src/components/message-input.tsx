@@ -252,6 +252,11 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
   const sendingRef = useRef(false)
   const [aborting, setAborting] = useState(false)
   const [uploading, setUploading] = useState<Array<{ tempId: string; name: string }>>([])
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [draggingFiles, setDraggingFiles] = useState(false)
+  // Nested composer children emit enter/leave events independently; depth prevents a flickering hint.
+  const fileDragDepth = useRef(0)
+  const uploadsInFlight = useRef(0)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -474,9 +479,11 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
     removePendingAttachment(conversationId, id)
   }
 
-  const handleFileSelect = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
+  const handleFileSelect = async (files: FileList | File[] | null) => {
+    if (!files || files.length === 0 || sendingRef.current || sending) return
     const list = Array.from(files)
+    uploadsInFlight.current += list.length
+    setUploadError(null)
     const placeholders = list.map((f) => ({ tempId: nanoid(), name: f.name }))
     setUploading((prev) => [...prev, ...placeholders])
 
@@ -487,8 +494,9 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
           const att = await uploadAttachmentAPI(conversationId, file)
           addPendingAttachment(conversationId, att)
         } catch (err) {
-          console.error('[MessageInput] upload failed', err)
+          setUploadError((previous) => [previous, `${file.name}：${err instanceof Error ? err.message : '上传失败，请重试'}`].filter(Boolean).join('\n'))
         } finally {
+          uploadsInFlight.current--
           setUploading((prev) => prev.filter((p) => p.tempId !== tempId))
         }
       }),
@@ -681,6 +689,8 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
   }
 
   const submit = async () => {
+    // Both Enter and the send button must wait for attachment IDs before submitting a draft.
+    if (uploadsInFlight.current > 0) return
     const text = content.trim()
     const hasAttachments = pending.length > 0
 
@@ -784,8 +794,40 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
   }
 
   return (
-    <div data-surface="composer" className="relative shrink-0 bg-background p-3">
+    <div data-surface="composer" className="relative shrink-0 bg-background p-3"
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        fileDragDepth.current++
+        setDraggingFiles(true)
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = sending ? 'none' : 'copy'
+      }}
+      onDragLeave={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        fileDragDepth.current = Math.max(0, fileDragDepth.current - 1)
+        if (!fileDragDepth.current) setDraggingFiles(false)
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.stopPropagation()
+        fileDragDepth.current = 0
+        setDraggingFiles(false)
+        if (sending || sendingRef.current) return
+        // Uploading a directory as an empty file would misleadingly look like success.
+        if (Array.from(event.dataTransfer.items).some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+          setUploadError('暂不支持拖入文件夹，请选择文件夹中的文件。')
+          return
+        }
+        void handleFileSelect(event.dataTransfer.files)
+      }}>
+      {draggingFiles && <div role="status" className="pointer-events-none absolute inset-1 z-50 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-background/95 text-sm text-primary">{sending ? '正在发送，请稍后添加文件' : '松开即可添加文件或图片'}</div>}
       {sendError && <p role="alert" className="mb-2 text-sm text-destructive">{sendError}</p>}
+      {uploadError && <p role="alert" className="mb-2 whitespace-pre-wrap text-sm text-destructive">{uploadError}</p>}
       {/* 引用预览 */}
       {replyMessage && (
         <div className="mb-2">
@@ -994,7 +1036,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
             variant="ghost"
             onClick={() => fileInputRef.current?.click()}
             disabled={sending}
-            title="附件 / 图片"
+            title="附件 / 图片（也可拖入输入框）"
           >
             <Paperclip className="size-4" />
           </Button>
@@ -1039,7 +1081,7 @@ export function MessageInput({ conversationId }: { conversationId: string }) {
         {(
           <Button
             onClick={() => void submit()}
-            disabled={(!content.trim() && pending.length === 0) || sending}
+            disabled={(!content.trim() && pending.length === 0) || sending || uploading.length > 0}
             size="icon"
             title={isRunning ? '加入队列 (Enter)' : '发送 (Enter)'}
             data-testid="composer-send"
