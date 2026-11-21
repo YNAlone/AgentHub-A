@@ -12,6 +12,19 @@ const messages: WorkingMessage[] = [
 const options = { messages, currentUserIndex: 1, tools: [], budget, signal, retryDelays: [0, 0] }
 
 describe('resumable working context', () => {
+  it('continues with an effective summary above the preferred 35% target', async () => {
+    const input: WorkingMessage[] = [{ role: 'system', content: 's' }, { role: 'assistant', content: '汉'.repeat(3000) }, { role: 'user', content: '汉'.repeat(4000) }]
+    const result = await compactWorkingContext({ ...options, messages: input, currentUserIndex: 2, summarize: async () => 'summary' })
+    expect(estimateRequestTokens(result.messages)).toBeGreaterThan(budget.maxInputTokens * 0.35)
+    expect(estimateRequestTokens(result.messages)).toBeLessThan(budget.maxInputTokens)
+    expect(result.messages[result.currentUserIndex]).toEqual(input[2])
+  })
+  it('sends protected-only input that fits the window even above the trigger', async () => {
+    const input: WorkingMessage[] = [{ role: 'user', content: '汉'.repeat(6500) }]
+    const summarize = vi.fn()
+    expect((await compactWorkingContext({ ...options, messages: input, currentUserIndex: 0, summarize })).messages).toBe(input)
+    expect(summarize).not.toHaveBeenCalled()
+  })
   it('compacts one large completed result with fewer than six messages, preserving originals and current request', async () => {
     const original = JSON.stringify(messages)
     const result = await compactWorkingContext({ ...options, summarize: async () => '已检索，来源 https://example.com/source；待答复。' })

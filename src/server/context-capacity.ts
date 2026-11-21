@@ -32,16 +32,14 @@ export function saveCapacityOverrides(value: unknown) {
 }
 export function resolveContextCapacity(identity: CapacityIdentity): ModelLimits {
   const endpoint = normalizeEndpoint(identity.endpoint)
+  // A default output reserve must not replace the verified per-request output capability.
+  const known = identity.adapter === 'custom' && identity.provider === 'deepseek' && identity.model === 'deepseek-v4-flash' && endpoint === 'https://open.bigmodel.cn/api/anthropic'
+    ? { contextWindow: 1_000_000, outputReserve: 8192, maxOutputTokens: 65536 }
+    : getModelLimits(identity.provider, identity.model, identity.endpoint)
   const configured = getCapacityOverrides().find((row) => row.adapter === identity.adapter && row.provider === identity.provider && row.endpoint === endpoint && row.model === identity.model)
   if (configured) {
-    const known = getModelLimits(identity.provider, identity.model, identity.endpoint)
     const outputReserve = Math.min(configured.outputReserve, known.maxOutputTokens ?? configured.outputReserve)
-    return { contextWindow: configured.contextWindow, outputReserve, maxOutputTokens: outputReserve }
+    return { contextWindow: configured.contextWindow, outputReserve, maxOutputTokens: known.maxOutputTokens ?? outputReserve }
   }
-  // This endpoint/model combination was explicitly confirmed by the workspace owner.
-  if (identity.adapter === 'custom' && identity.provider === 'deepseek' && identity.model === 'deepseek-v4-flash' && endpoint === 'https://open.bigmodel.cn/api/anthropic') {
-    return { contextWindow: 1_000_000, outputReserve: 8192, maxOutputTokens: 65536 }
-  }
-  const limits = getModelLimits(identity.provider, identity.model, identity.endpoint)
-  return { ...limits, outputReserve: Math.min(8192, limits.maxOutputTokens ?? limits.outputReserve) }
+  return { ...known, outputReserve: Math.min(8192, known.maxOutputTokens ?? known.outputReserve) }
 }

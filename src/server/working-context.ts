@@ -86,9 +86,11 @@ export async function compactWorkingContext(options: {
   const source = messages.filter((message) => !protectedSet.has(message))
   if (pendingContextCalls(messages).length) throw new ContextPausedError('存在尚未完成的工具调用，已保留现场，请先核对执行状态。')
   const target = budget.maxInputTokens * (budget.targetRatio ?? 0.35)
-  if (!source.length || estimateRequestTokens(protectedMessages, tools) >= target) {
-    throw new ContextPausedError('系统指令或当前输入无法压缩到目标容量，请调整输入或模型窗口后继续。')
+  if (estimateRequestTokens(protectedMessages, tools) >= budget.maxInputTokens) {
+    throw new ContextPausedError('系统指令或当前输入无法容纳在可用窗口内，请调整输入或模型窗口后继续。')
   }
+  // Protected-only input can still fit: a preferred compression ratio is not an execution gate.
+  if (!source.length) return { messages, currentUserIndex: options.currentUserIndex }
   const retryDelays = options.retryDelays ?? [2000, 5000]
   for (let attempt = 0; attempt <= retryDelays.length; attempt++) {
     signal.throwIfAborted()
@@ -105,8 +107,8 @@ export async function compactWorkingContext(options: {
         messages[options.currentUserIndex],
       ]
       const after = estimateRequestTokens(result, tools)
-      if (after > target || after >= before) throw new Error('摘要尚未达到目标容量。')
-      options.progress?.({ state: 'running', message: `上下文压缩完成：估算 ${before} → ${after} tokens，继续执行`, before, after })
+      if (after >= budget.maxInputTokens || after >= estimateRequestTokens(messages, tools)) throw new Error('摘要未有效缩小或仍超出可用窗口。')
+      options.progress?.({ state: 'running', message: `上下文压缩完成：估算 ${before} → ${after} tokens${after > target ? '（高于优先目标，仍可容纳）' : ''}，继续执行`, before, after })
       return { messages: result, currentUserIndex: result.length - 1 }
     } catch {
       signal.throwIfAborted()

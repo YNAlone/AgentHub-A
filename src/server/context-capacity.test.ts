@@ -6,6 +6,16 @@ import { updatePersonalSettings } from './personal-settings'
 const identity = { adapter: 'custom' as const, provider: 'deepseek' as const, endpoint: 'https://open.bigmodel.cn/api/anthropic', model: 'deepseek-v4-flash' }
 beforeEach(() => saveCapacityOverrides([]))
 
+it('preserves an explicit output allowance when saving a default reserve', () => {
+  for (const endpoint of ['https://api.deepseek.com/v1', identity.endpoint]) {
+    const selected = { ...identity, endpoint }
+    saveCapacityOverrides([{ ...selected, contextWindow: 1_000_000, outputReserve: 8192 }])
+    const budget = createContextBudget(resolveContextCapacity(selected), undefined, 65536)
+    expect(budget.maxOutputTokens).toBe(65536)
+    expect(budget.maxInputTokens).toBe(914464)
+  }
+})
+
 it('uses the confirmed 1M identity without leaking capacity to another endpoint or model', () => {
   expect(resolveContextCapacity(identity).contextWindow).toBe(1_000_000)
   expect(resolveContextCapacity({ ...identity, endpoint: 'https://unverified.invalid/v1' }).contextWindow).not.toBe(1_000_000)
