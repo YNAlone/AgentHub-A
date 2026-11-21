@@ -16,6 +16,8 @@ Capacity SHALL be keyed by adapter, provider, normalized effective endpoint and 
 ### Requirement: Estimates SHALL trigger compaction instead of failure
 At 60% usable input by default, the application SHALL compact toward 35% or less. Estimates SHALL distinguish multilingual text and JSON structure, use recent provider usage plus new content when available, and be labelled estimates.
 
+The 35% target SHALL NOT be a pause gate. A shrinking summary that fits usable input SHALL permit continuation above that target. Protected-only input that fits SHALL proceed without summary. Explicit output allowances SHALL remain bounded by known output capability, not overwritten by a default output reserve when saving window overrides.
+
 #### Scenario: Five large search results follow one request
 - **WHEN** completed tool results exceed the trigger threshold
 - **THEN** the next model request uses a summary without replaying searches or discarding original results.
