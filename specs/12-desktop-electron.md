@@ -488,11 +488,13 @@ Spec 12 把 in-process 作为首选；回退方案保留入口（同一份 main 
 
 ## 12. 验证清单
 
+**2026-11-21 Windows x64 Beta 验收**：NSIS 在仓库外临时目录安装成功；默认数据路径、自动认证、未授权请求拒绝、Custom 本机模型替身流式回复与重启持久化通过。PATH 未提供全局 Node/Git，包内 Claude/Codex 二进制均能启动。当前安装包约 356 MiB，超过早期 300 MB 体积目标；下列 macOS 记录属于历史证据，不代表本次已重新验证。真实 SDK 模型/工具调用、多设备与干净虚拟机验收仍待完成。
+
 **ABI / DB bootstrap（本次主要验证项）**：
 - [x] dev server 起得来、`GET /api/agents` 返回 200 + 5 个内置 agent(自动 seed 通过)。**注:`pnpm dev` 现为纯 Node(Node ABI);electron-as-node 下会挂死,见 §6.1 更新**
 - [x] `pnpm test` 先跑 Node ABI preflight,即使上一条命令把 native binding 切到 Electron ABI,也会自动切回 Node ABI
 - [x] `pnpm build` / `pnpm db:*` 先跑 Electron ABI preflight,即使上一条命令把 native binding 切到 Node ABI,也会自动切回 Electron ABI
-- [ ] `beforeBuild` 声明外部依赖管理后，打包不再收集根 node_modules 或执行内置 rebuild；以当前发布日志验收。
+- [x] `beforeBuild` 声明外部依赖管理后，打包不再收集根 node_modules 或执行内置 rebuild；Windows Beta 打包及安装运行验收通过。
 - [x] packaged `Contents/MacOS/AgentHub` 从终端启动无错误，`~/Library/Application Support/AgentHub/data/agenthub.db` 8 张表全建好，5 个内置 agent 已自动 seed
 - [x] packaged app 内 `app.asar.unpacked/.next/standalone/.../better_sqlite3.node` 是 arm64（standalone 自带的那份就是 ABI 130，无需 afterPack 覆盖）
 
@@ -509,7 +511,7 @@ Spec 12 把 in-process 作为首选；回退方案保留入口（同一份 main 
 - [x] `pnpm electron:build` 输出 `release/AgentHub-<ver>-arm64.dmg`、`release/AgentHub-<ver>.dmg`、（Windows 待验）`release/AgentHub-<ver>-setup.exe`
 - [ ] DMG 拖进 Applications 后双击能启动（macOS 26+ 需在 System Settings → Privacy & Security 点 "Open Anyway" 绕过 Gatekeeper 未签名警告）
 - [ ] EXE 安装后开始菜单出现快捷方式，启动正常
-- [x] 安装包体积 < 300 MB（实测 arm64 = 179 MB，x64 = 185 MB）
+- [ ] 当前安装包体积 < 300 MB（Windows Beta 约 356 MiB；早期 macOS arm64 = 179 MB、x64 = 185 MB 为历史记录）
 
 **资源 / 安全**：
 - [ ] 进程列表里只有 1 个主进程 + 1 个 renderer + 必要的 chromium helper（无孤儿 Next server 子进程）

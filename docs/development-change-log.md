@@ -232,3 +232,13 @@ Deployment: 302a8eb deployed with no active runs; backup /home/ubuntu/backups/ag
 - 本次验证：pnpm test 为 325 通过、5 跳过；pnpm typecheck、pnpm lint、pnpm electron:tsc 通过；附件拖放 Playwright 测试 2 项通过。对既有未提交业务修改进行了独立只读复核，未发现确认的合并阻塞。
 - 实际 Electron 冒烟使用重编译后的主进程、此前本轮打包检查构建成功的生产 standalone 和临时 AGENTHUB_DATA_DIR，验证主窗口加载本机首页且受保护 /api/agents 返回 200；未调用真实模型。该检查不是 NSIS 安装后的干净机器验收，也未发布安装包或部署服务器。
 - 本轮整理现有规格、业务修复、拖放交互、说明文档和毕设材料为独立主题提交；合并与远端同步状态以 Git 分支记录为准。
+
+## 2026-11-21 — Windows 桌面 Beta 打包与安装验收
+
+- 修复动态 tracing 将开发目录带入 standalone：仅保留运行根目录、MCP 桥接脚本和 LICENSE；扫描打包资源未发现环境文件、local-auth.json、AgentHub 数据库或符号链接。
+- electron-builder 的默认依赖收集会重复打入根 node_modules；通过 beforeBuild 返回 false 声明预构建依赖管理，npmRebuild 保持 true 以执行该 hook。服务运行树作为 extraResources 复制，桌面入口单独进入 ASAR，避免逐个哈希整棵非归档依赖树。
+- 实际启动发现 extraResources 从 standalone 根复制仍会被 builder 硬编码过滤 node_modules；将复制起点提升为 .next，并限定 standalone/**/*。新增使用真实 FileMatcher/copyFiles 的回归测试，修复前因 next/package.json 缺失失败，修复后通过。
+- 新增 scripts/verify-desktop.mjs：在临时用户目录启动真正打包的 Electron，移除 PATH 中的 Node/Git、清除继承的模型凭据变量，验证默认数据目录、自动认证、未授权请求 401、创建会话、Custom 本机模型替身的 SSE 回复及重启后 SQLite 消息保留。通过后清理测试用户目录。
+- 验证：pnpm test 为 326 通过、5 跳过；16 项 Playwright 浏览器测试通过；typecheck、lint、生产 Next 构建、Electron 编译及 git diff --check 通过。新验收脚本额外通过 ESLint 和语法检查。生产构建仍有动态文件追踪范围过广提示，发布资源经白名单清理。
+- Windows 11 10.0.26100 x64 上实际运行 NSIS，安装到源码仓库外临时目录，安装退出码 0；已安装主程序哈希与打包产物一致，桌面主流程与重启验证通过。安装后的 codex-cli 0.136.0、Claude Code 2.1.170 均在不含 Node/Git 的 PATH 下启动成功；静默卸载通过，测试安装已移除。
+- 发布定位：v0.2.0-beta.1 Windows x64 预发布，安装包 373,121,759 字节，SHA-256 为 635fe9abcdef93e917076bbfa5765ef5bb8b18b066c1ba1da40d62a8a1f0de1f。未签名，未做干净虚拟机/多设备验收，未重新执行真实付费模型或 SDK 工具调用；不宣称稳定版生产验收完成。此次不部署远程服务器，也不修改用户业务数据。
