@@ -16,6 +16,10 @@ Electron packaging MUST run against Next standalone server output and keep requi
 - **WHEN** Electron launches the Next server
 - **THEN** `.next/standalone` is available as a real unpacked directory.
 
+The sanitized standalone tree SHALL be copied as an extra resource to `app.asar.unpacked/.next/standalone`. Only the desktop entry code is archived; the server retains its existing real filesystem path without serial ASAR hashing of unpacked dependencies.
+
+The resource mapping SHALL start from `.next` and include only `standalone/**/*`, so electron-builder's copy-root `node_modules` exclusion cannot remove server dependencies.
+
 ### Requirement: Native and SDK packages SHALL remain external
 
 Packages that rely on native bindings or child runtime lookup MUST be listed in `serverExternalPackages`.
@@ -23,6 +27,11 @@ Packages that rely on native bindings or child runtime lookup MUST be listed in 
 #### Scenario: Codex SDK is bundled
 - **WHEN** Next builds the server bundle
 - **THEN** `@openai/codex-sdk` and `@openai/codex` remain runtime dependencies.
+
+#### Scenario: Standalone dependencies are prepared for packaging
+- **WHEN** the prebuild script has prepared Electron-compatible standalone dependencies
+- **THEN** electron-builder treats dependencies as externally managed through its `beforeBuild` hook
+- **AND** does not collect a second root dependency tree; only runtime roots and the MCP bridge are retained in standalone.
 
 ### Requirement: Desktop data SHALL live in userData
 

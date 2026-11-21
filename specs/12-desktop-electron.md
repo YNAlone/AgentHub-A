@@ -71,7 +71,7 @@
 | Next.js 运行模式 | **Standalone in-process**（main require 起 server） | A. `spawn('next start')`：进程多一层，启动慢、退出时要清孤儿进程；B. `next export`：API/SSE 全废 |
 | 渲染端通信 | **HTTP/SSE 走 127.0.0.1:port** | 复用现有所有 API / fetch / SSE，不引入 Electron IPC，最少改动 |
 | Preload bridge | **可选，仅暴露 native file dialog** | 现有 DirPicker 走 `/api/fs/listdir`；如要换原生 dialog 才需要 preload |
-| 打包 | **electron-builder** | 成熟，asarUnpack 配置简单，多平台一键 |
+| 打包 | **electron-builder** | 桌面入口使用 asar，standalone 通过 extraResources 保留真实路径 |
 
 ---
 
@@ -289,20 +289,20 @@ pnpm dev/test    → ensure-node-sqlite → node/vitest/playwright(纯 Node)
 1. pnpm build              # next build 在 Electron Node 里跑，standalone 自带 ABI 130 .node
 2. pnpm electron:prebuild  # 拷 static/public + 补依赖 + 清 broken symlinks/重复 runtime
 3. pnpm electron:tsc       # 编 main 进程
-4. electron-builder        # 打包；配 npmRebuild: false 禁用内置 rebuild（已经不需要）
+4. electron-builder        # 打包；beforeBuild 返回 false，依赖由 standalone 预构建管理
 ```
 
-**`build.npmRebuild: false`** 必须配。否则 electron-builder 默认会跑 `@electron/rebuild`，pnpm 的 content-addressable 硬链接会让 staging 副本的 rebuild 污染 source store —— 那条老路上每次 build 完都得手动 `pnpm rebuild better-sqlite3` 恢复 dev。
+**`build.npmRebuild: true` 与 `beforeBuild` 返回 false 必须配套**。hook 声明依赖由预构建阶段管理，使 electron-builder 跳过内置 rebuild 和第二份根 node_modules 收集；单独配置 npmRebuild=false 会提前返回而不执行 hook。实际 ABI 仍由 ensure-electron-sqlite 准备，避免重复 rebuild 污染 pnpm source store。
 
 **Electron 33 vs better-sqlite3 12.10.0**：本项目锁 `electron@33.4.11`，因为 better-sqlite3 12.10.0 native 代码用过时的 `v8::External::New(isolate, addon)` 2 参数形式，跟 Electron 34+ 的 V8 13 不兼容（编译报 "expected 3, have 2"）。等 better-sqlite3 升级支持新 V8 API 后再追新 Electron major。
 
-**asarUnpack: `[".next/standalone/**"]`** 仍然必要（chdir 跨不进 asar 归档，详见 §6.5）。
+**asar 只包含 `dist-electron/**` 与 `package.json`**。standalone 通过 `extraResources` 复制到 `app.asar.unpacked/.next/standalone`，不进入 asar 文件清单，避免对整个服务依赖树逐文件计算 ASAR integrity。真实目录仍是启动时 `chdir` 与原生模块加载的要求，详见 §6.5。
 
 ### 6.2 @anthropic-ai/claude-agent-sdk
 
-- SDK 内部 `spawn('claude-code')` 调用 Claude Code CLI 二进制
-- 需求：用户机器上**已**装过 Claude Code CLI（与现状一致；不打包进 app）。打不到时由 SDK 在第一次 `query()` 时抛错，UI 走错误路径展示
-- SDK 自带的 JS 入口需要能被 require：放在 standalone 的 node_modules 里，electron-builder 默认会带
+- 本次安装并核验的 `@anthropic-ai/claude-agent-sdk@0.3.170` 通过 optionalDependencies 携带平台原生运行时；Windows x64 包为 `@anthropic-ai/claude-agent-sdk-win32-x64`，包含 `claude.exe`。SDK 会解析包内运行时，不再把用户全局安装 Claude Code CLI 作为打包前提。
+- SDK JS 入口与当前平台运行时包必须同时保留在 standalone 的 `node_modules` 中，并随 `extraResources` 复制；`serverExternalPackages` 保留 SDK 的运行时解析语义。
+- 已核验 standalone 带入 Windows 原生二进制。此项只证明运行时资源存在；安装包内 `query()`、真实模型响应和工具执行仍需单独验收，不能以文件存在或模拟测试替代。
 
 ### 6.3 @openai/codex-sdk
 
@@ -323,18 +323,22 @@ pnpm dev/test    → ensure-node-sqlite → node/vitest/playwright(纯 Node)
     "productName": "AgentHub",
     "directories": { "output": "release" },
     "asar": true,
-    "asarUnpack": [
-      ".next/standalone/**"
+    "extraResources": [
+      {
+        "from": ".next",
+        "to": "app.asar.unpacked/.next",
+        "filter": ["standalone/**/*"]
+      }
     ],
     "files": [
       "dist-electron/**",
-      ".next/standalone/**",
       "package.json"
     ],
-    "npmRebuild": false,
+    "npmRebuild": true,
+    "beforeBuild": "scripts/electron-before-build.cjs",
     "mac": {
       "category": "public.app-category.developer-tools",
-      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [{ "target": "dmg", "arch": ["arm64"] }],
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
@@ -349,13 +353,15 @@ pnpm dev/test    → ensure-node-sqlite → node/vitest/playwright(纯 Node)
 }
 ```
 
-`npmRebuild: false` 关键：禁用 electron-builder 内置的 `@electron/rebuild`。Electron ABI 准备由 `scripts/ensure-electron-sqlite.mjs` 在 build/db 命令前完成，不需要 electron-builder 再 rebuild。开了它反而会通过 pnpm 硬链接污染 source store。
+`scripts/electron-before-build.cjs` 必须返回 false，声明 standalone 已管理运行依赖。Electron ABI 准备由 `scripts/ensure-electron-sqlite.mjs` 在 build/db 命令前完成，不再由 electron-builder 收集或 rebuild 根依赖。
 
-### 6.5 asarUnpack + .asar.unpacked require 路径
+### 6.5 extraResources + .asar.unpacked require 路径
 
-**为什么 `asarUnpack: [".next/standalone/**"]`**：Next 的 standalone `server.js` 启动第一行就 `process.chdir(__dirname)`。`chdir` 是真实文件系统系统调用，跨不进 asar 归档（asar 不是真实目录），会抛 `ENOTDIR`。把整个 standalone 解出到 `app.asar.unpacked/.next/standalone/`，`__dirname` 就指向真实目录，chdir 通过。better-sqlite3 / claude-agent-sdk 都在 standalone 自带的 node_modules 里，跟着一起 unpack，不需要单独写 `**/better-sqlite3/**`。
+**为什么复制到真实目录**：Next 的 standalone `server.js` 启动时执行 `process.chdir(__dirname)`。`chdir` 是真实文件系统系统调用，跨不进 asar 归档，会抛 `ENOTDIR`。`extraResources` 将服务及其 `node_modules` 直接复制到 `app.asar.unpacked/.next/standalone/`，better-sqlite3 原生模块与 SDK 子进程运行时也保留真实路径。该目录无需登记在 ASAR 索引中；不再使用 `asarUnpack` 遍历和哈希整棵服务依赖树。
 
-**⚠️ 还要 require unpacked 路径**：仅仅 `asarUnpack` 不够。如果通过 `app.getAppPath() + '.next/standalone/server.js'` 这条 `.asar/...` 路径 require，Electron 的 asar layer 会把模块的 `__dirname` 设成 asar 逻辑路径（即使物理文件在 `.asar.unpacked/...`）。chdir 看到 asar 逻辑路径，依然 ENOTDIR。`server-bootstrap.ts` 必须把 `.asar` 替换成 `.asar.unpacked`，让 require 走真实磁盘路径，绕过 asar layer：
+**资源映射必须从 `.next` 开始**：当前 electron-builder 的共享复制过滤器在 glob 匹配前直接拒绝相对路径恰好为 `node_modules` 的目录。因此 `from: ".next/standalone"` 即使配 `filter: ["**/*"]`，也会漏掉根运行依赖，启动时报 `Cannot find module 'next'`。使用 `from: ".next"`、`to: "app.asar.unpacked/.next"`、`filter: ["standalone/**/*"]`，依赖目录的相对路径成为 `standalone/node_modules`，并排除 standalone 以外的构建缓存。`electron/packaging.test.mjs` 使用实际 builder 复制函数覆盖顶层依赖、嵌套 `.pnpm` 依赖和构建缓存排除行为。
+
+**必须 require unpacked 路径**：standalone 不在 `app.asar` 内，入口必须显式指向真实的 `.asar.unpacked` 目录。`server-bootstrap.ts` 使用下列路径，保证 `__dirname` 与 `process.cwd()` 都落在完整的 standalone 资源树中：
 
 ```typescript
 const appPath = app.getAppPath()
@@ -365,11 +371,13 @@ const standaloneRoot = appPath.endsWith('.asar')
 require(path.join(standaloneRoot, '.next', 'standalone', 'server.js'))
 ```
 
-**`scripts/electron-prebuild.mjs` 做四件事**：
-1. 把 `.next/static` 与 `public/` 拷进 `.next/standalone/` 子树。Next standalone 默认不包含这两份内容，server.js 启动后会找不到静态资源
-2. 递归补齐 Next 已 trace 的包 + 明确 server runtime allowlist 在 `.next/standalone/node_modules` 中缺失的运行时依赖；非当前平台的 optional runtime 包会被跳过
-3. 删除 Codex npm alias 已经提供的平台 runtime 对应的 `.pnpm/@openai+codex@...-<platform>` 重复 store；运行时解析走顶层 alias 包，重复 store 只会增加安装体积
-4. 扫 standalone 子树清除 broken symlinks。pnpm 在 `.next/standalone/node_modules/.pnpm/node_modules/` 里有部分 hoist 入口指向未被 Next file tracer 收录的旧版本（典型：`semver -> ../semver@6.3.1/...`，但 standalone 只带 `semver@7.8.1`）。这些 dangling link 运行时无害，但 electron-builder 打包阶段 `stat` 会 ENOENT
+**`scripts/electron-prebuild.mjs` 的资源准备职责**：
+
+1. 以白名单清理 standalone 根目录，只保留 `.next`、`node_modules`、`public`、`scripts`、`package.json`、`server.js`、`LICENSE`，防止动态 tracing 带入源码、开发配置或本地数据。`scripts` 仅保留 `agenthub-codex-mcp.mjs`，并从仓库复制项目 `LICENSE`。
+2. 把 `.next/static` 与 `public/` 拷进 `.next/standalone/` 子树。Next standalone 默认不包含这两份内容，server.js 启动后会找不到静态资源。
+3. 递归补齐 Next 已 trace 的包 + 明确 server runtime allowlist 在 `.next/standalone/node_modules` 中缺失的运行时依赖；非当前平台的 optional runtime 包会被跳过。
+4. 删除 Codex npm alias 已经提供的平台 runtime 对应的 `.pnpm/@openai+codex@...-<platform>` 重复 store；运行时解析走顶层 alias 包，重复 store 只会增加安装体积。
+5. 物化指向 standalone 外的依赖链接，清除 broken symlinks。pnpm hoist 入口可能指向未被 Next tracer 收录的旧版本；保留失效链接会使打包阶段 `stat` 报 `ENOENT`，保留开发机绝对路径则会使安装包脱离仓库后无法加载模块。
 
 ### 6.6 next.config.ts 改动
 
@@ -426,7 +434,7 @@ pnpm electron:build
 # 1. pnpm build           — ensure Electron ABI;Next 在 Electron Node 里 build，standalone 自带 ABI 130 .node
 # 2. pnpm electron:prebuild — 拷 static/public + 补依赖 + 清 broken symlinks/重复 runtime
 # 3. pnpm electron:tsc      — 编 main 进程到 dist-electron/main.js
-# 4. electron-builder       — 打包；npmRebuild: false，直接复用现成的 ABI 130 .node
+# 4. electron-builder       — 打包；beforeBuild 返回 false，复用现成的 Electron ABI .node
 # 输出 release/AgentHub-<ver>.dmg、release/AgentHub-<ver>-setup.exe
 ```
 
@@ -484,7 +492,7 @@ Spec 12 把 in-process 作为首选；回退方案保留入口（同一份 main 
 - [x] dev server 起得来、`GET /api/agents` 返回 200 + 5 个内置 agent(自动 seed 通过)。**注:`pnpm dev` 现为纯 Node(Node ABI);electron-as-node 下会挂死,见 §6.1 更新**
 - [x] `pnpm test` 先跑 Node ABI preflight,即使上一条命令把 native binding 切到 Electron ABI,也会自动切回 Node ABI
 - [x] `pnpm build` / `pnpm db:*` 先跑 Electron ABI preflight,即使上一条命令把 native binding 切到 Node ABI,也会自动切回 Electron ABI
-- [x] `pnpm electron:build` 日志包含 `skipped dependencies rebuild reason=npmRebuild is set to false`（确认没有 npm rebuild 反复污染 source store）
+- [ ] `beforeBuild` 声明外部依赖管理后，打包不再收集根 node_modules 或执行内置 rebuild；以当前发布日志验收。
 - [x] packaged `Contents/MacOS/AgentHub` 从终端启动无错误，`~/Library/Application Support/AgentHub/data/agenthub.db` 8 张表全建好，5 个内置 agent 已自动 seed
 - [x] packaged app 内 `app.asar.unpacked/.next/standalone/.../better_sqlite3.node` 是 arm64（standalone 自带的那份就是 ABI 130，无需 afterPack 覆盖）
 
@@ -493,7 +501,7 @@ Spec 12 把 in-process 作为首选；回退方案保留入口（同一份 main 
 - [ ] 「设置」面板填 key → 创建会话 → 发消息 → agent 回复
 - [ ] sandbox workspace：bash 工具能跑 `ls` / `Get-ChildItem`
 - [ ] local workspace：能绑定 `~/Documents/somewhere`，bash 在该目录跑
-- [ ] Claude Code agent：能跑 `query()`，子进程能起来（前提是用户装过 Claude Code CLI）
+- [ ] Claude Code agent：从安装包内的平台运行时启动 `query()`，完成真实模型响应与工具执行；不以全局安装 CLI 作为验证前提。
 - [ ] 重启 app 后会话历史还在（DB 在 userData 而非临时目录）
 - [ ] SSE：消息流式输出可见
 
@@ -521,7 +529,7 @@ Spec 12 把 in-process 作为首选；回退方案保留入口（同一份 main 
 | 多窗口 / 多实例 | `singleInstanceLock` 限定单实例；多窗口未来再说 |
 | 应用菜单 / 托盘 / 全局快捷键 | Phase 1 用 Electron 默认菜单（即 OS 标准菜单），不做自定义 |
 | 深链接 protocol handler（`agenthub://`） | 未规划用户场景 |
-| 把 Claude Code CLI 打包进 app | CLI 体积大、版本与官方解耦，让用户自行装；缺失走错误提示 |
+| 单独维护全局 Claude Code CLI 安装流程 | 当前 SDK 已携带平台原生运行时；应用随 SDK 打包该依赖，真实调用仍按功能清单单独验收 |
 | OS keychain / safeStorage 存 key | 详见 CLAUDE.md §5.4 与 §9 |
 | 渲染端 IPC 暴露 | Phase 1 通信全走 HTTP/SSE；preload 仅在 native dialog 介入时启用 |
 
