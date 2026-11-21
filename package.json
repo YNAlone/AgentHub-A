@@ -1,6 +1,6 @@
 {
   "name": "bytedance-agenthub",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "license": "AGPL-3.0-only",
   "private": true,
   "main": "dist-electron/main.js",
@@ -100,18 +100,19 @@
       "buildResources": "build"
     },
     "asar": true,
-    "asarUnpack": [
-      ".next/standalone/**"
+    "extraResources": [
+      {
+        "from": ".next",
+        "to": "app.asar.unpacked/.next",
+        "filter": ["standalone/**/*"]
+      }
     ],
     "files": [
       "dist-electron/**",
-      ".next/standalone/**",
-      "!.next/standalone/release/**",
-      "!.next/standalone/.agenthub-data/**",
-      "!.next/standalone/apps/**",
       "package.json"
     ],
-    "npmRebuild": false,
+    "npmRebuild": true,
+    "beforeBuild": "scripts/electron-before-build.cjs",
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [

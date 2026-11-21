@@ -53,14 +53,23 @@ if (!fs.existsSync(standaloneDir)) {
   process.exit(1)
 }
 
-// Next tracer 在遇到非常动态的 server import 时可能把 repo 级生成物也带进 standalone。
-// Electron Builder 会递归签名 .app/.framework，旧 release 一旦被嵌进去就会导致 codesign 崩。
-for (const relativePath of ['release', '.agenthub-data', 'apps']) {
-  const target = path.join(standaloneDir, relativePath)
-  if (!fs.existsSync(target)) continue
+// Dynamic tracing can include the checkout; only runtime roots belong in a distributable.
+const runtimeEntries = new Set(['.next', 'node_modules', 'public', 'scripts', 'package.json', 'server.js', 'LICENSE'])
+for (const entry of fs.readdirSync(standaloneDir, { withFileTypes: true })) {
+  if (runtimeEntries.has(entry.name)) continue
+  const target = path.join(standaloneDir, entry.name)
   fs.rmSync(target, { recursive: true, force: true })
-  console.log(`✓ removed traced ${relativePath} from standalone`)
+  console.log(`✓ removed non-runtime entry ${entry.name} from standalone`)
 }
+
+// Codex launches only this bridge; development and release scripts must stay outside the app.
+const runtimeScripts = path.join(standaloneDir, 'scripts')
+if (fs.existsSync(runtimeScripts)) {
+  for (const name of fs.readdirSync(runtimeScripts)) {
+    if (name !== 'agenthub-codex-mcp.mjs') fs.rmSync(path.join(runtimeScripts, name), { recursive: true, force: true })
+  }
+}
+fs.copyFileSync(path.join(root, 'LICENSE'), path.join(standaloneDir, 'LICENSE'))
 
 // ─── A: 静态资源 ─────────────────────────────────────────
 function copyIfExists(src, dest, label) {

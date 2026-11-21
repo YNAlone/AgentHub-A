@@ -23,7 +23,7 @@ export async function startEmbeddedServer(): Promise<number> {
 
   // app.getAppPath() 在打包模式下指向 app.asar；但 Next standalone 的 server.js
   // 入口第一行就 process.chdir(__dirname)，chdir 是真实文件系统系统调用，跨不进 asar。
-  // 我们已经把 .next/standalone 走 asarUnpack 解出来了，require 时直接走 .asar.unpacked
+  // extraResources 将 standalone 放在归档外，require 时直接走 .asar.unpacked
   // 路径，让 Electron asar layer 不介入 —— __dirname 才会是真实磁盘路径。
   const appPath = app.getAppPath()
   const standaloneRoot = appPath.endsWith('.asar')
