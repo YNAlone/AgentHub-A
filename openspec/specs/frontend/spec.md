@@ -10,6 +10,9 @@ Defines client state, event application, and major UI boundaries. Detailed front
 
 ## Requirements
 
+### Requirement: Composer SHALL accept dropped files
+Dropping files onto the composer SHALL reuse the attachment picker upload flow, including validation, previews and removal. Multiple files SHALL be supported while an Agent is running. File drags SHALL show an upload hint and prevent browser navigation; text drags SHALL retain normal behavior. Upload failures SHALL be visible without clearing the draft, and sending SHALL wait until uploads settle. Directories SHALL be rejected with a visible explanation.
+
 ### Requirement: Pending questions SHALL remain non-modal
 Pending questions SHALL appear in a collapsible panel above the message input, using workspace theme tokens without blocking message browsing or input.
 
