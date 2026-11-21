@@ -43,3 +43,11 @@ Each agent execution MUST create an AgentRun record with trigger message, parent
 - **WHEN** an adapter stream fails
 - **THEN** the AgentRun status becomes `failed`
 - **AND** the user sees an error message in the conversation.
+
+### Requirement: Turn removal SHALL follow explicit ownership
+Withdrawal, edit/resend and regeneration SHALL select runs by conversation ID and trigger message ID, then include descendant parent-run relationships. Message run IDs SHALL identify removable output; timestamps SHALL NOT define ownership. Cancellation SHALL settle before deletion. Artifacts referenced by retained messages SHALL survive. Removed runs' checkpoints and journals SHALL be cleared, and stale conversation summaries invalidated.
+
+#### Scenario: A response arrives while B is queued
+- **WHEN** B is dispatched and subsequently withdrawn, edited or regenerated
+- **THEN** A's response and artifacts remain, even if created after B's input
+- **AND** only B's owned task output is removed; regeneration retains B's input.
