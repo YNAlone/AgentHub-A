@@ -3,7 +3,7 @@ import { accessSync, constants, mkdirSync, statSync } from 'node:fs'
 import { rm as fsRm } from 'node:fs/promises'
 import path from 'node:path'
 
-import { and, desc, eq, gt, gte, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 
 import { db, schema, sqlite } from '@/db/client'
 import { drainMessageQueue, startMessageQueueWorker } from './message-queue'
@@ -748,15 +748,57 @@ export interface WithdrawResult {
   deletedArtifactIds: string[]
 }
 
-/**
- * 撤回会话中**最后一条** user 消息，及其触发的所有下游 agent message + artifact。
- *
- * 处理逻辑：
- *  1. 校验 messageId 是会话最后一条 user 消息
- *  2. abort 所有运行中 run（fire-and-forget）
- *  3. wait 500ms 让 AgentRunner.finalize 跑完（避免 emitErrorVisualisation 后插的死消息漏删）
- *  4. 时间窗删除：DELETE messages / artifacts / agent_runs WHERE created_at/started_at >= userMsg.createdAt
- */
+/** Queued timestamps overlap earlier turns; ownership comes only from trigger and parent run IDs. */
+function collectTurn(conversationId: string, triggerMessageId: string) {
+  const runs = db.select().from(schema.agentRuns).where(eq(schema.agentRuns.conversationId, conversationId)).all()
+  const runIds = new Set(runs.filter((run) => run.triggerMessageId === triggerMessageId).map((run) => run.id))
+  let previousSize = -1
+  while (previousSize !== runIds.size) {
+    previousSize = runIds.size
+    for (const run of runs) if (run.parentRunId && runIds.has(run.parentRunId)) runIds.add(run.id)
+  }
+  const messages = db.select().from(schema.messages).where(eq(schema.messages.conversationId, conversationId)).all()
+    .filter((message) => message.runId && runIds.has(message.runId))
+  return { runIds: [...runIds], messages }
+}
+
+/** Await final writes before deleting owned output so cancellation cannot recreate removed messages. */
+async function removeTurnOutput(conversationId: string, triggerMessageId: string, removeInput: boolean): Promise<WithdrawResult> {
+  const { AgentRunner } = await getAgentRunner()
+  await AgentRunner.abortAndWait(collectTurn(conversationId, triggerMessageId).runIds)
+  const owned = collectTurn(conversationId, triggerMessageId)
+  const messageIds = owned.messages.map((message) => message.id)
+  if (removeInput) messageIds.push(triggerMessageId)
+  const deletedIds = new Set(messageIds)
+  const artifactIds = new Set<string>()
+  for (const message of owned.messages) for (const part of message.parts) {
+    if (part.type === 'artifact_ref') artifactIds.add(part.artifactId)
+  }
+  // Shared references are evidence belonging to retained turns as well.
+  for (const message of db.select().from(schema.messages).all()) {
+    if (!deletedIds.has(message.id)) for (const part of message.parts) {
+      if (part.type === 'artifact_ref') artifactIds.delete(part.artifactId)
+    }
+  }
+  clearClaudeCodeSession(conversationId)
+  clearCodexSession(conversationId)
+  db.transaction((tx) => {
+    tx.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId)).run()
+    // A summary can include removed output even when regeneration retains its triggering input.
+    tx.delete(schema.contextSummaries).where(eq(schema.contextSummaries.conversationId, conversationId)).run()
+    if (messageIds.length) tx.delete(schema.messages).where(inArray(schema.messages.id, messageIds)).run()
+    if (artifactIds.size) tx.delete(schema.artifacts).where(and(eq(schema.artifacts.conversationId, conversationId), inArray(schema.artifacts.id, [...artifactIds]))).run()
+    if (owned.runIds.length) {
+      tx.delete(schema.runContextCheckpoints).where(inArray(schema.runContextCheckpoints.runId, owned.runIds)).run()
+      tx.delete(schema.runWorkflowJournal).where(inArray(schema.runWorkflowJournal.runId, owned.runIds)).run()
+      tx.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, owned.runIds)).run()
+    }
+  })
+  eventBus.publish({ type: 'message.removed', conversationId, timestamp: Date.now(), messageIds, artifactIds: [...artifactIds] })
+  return { deletedMessageIds: messageIds, deletedArtifactIds: [...artifactIds] }
+}
+
+/** Withdraw only the latest input and the runs it owns. */
 export async function withdrawLatestUserMessage(
   conversationId: string,
   messageId: string,
@@ -789,76 +831,7 @@ export async function withdrawLatestUserMessage(
     throw new Error('Only the latest user message can be withdrawn')
   }
 
-  // 先收集 running run 调 abort（fire-and-forget）
-  const runsToAbort = await db.query.agentRuns.findMany({
-    where: and(
-      eq(schema.agentRuns.conversationId, conversationId),
-      gte(schema.agentRuns.startedAt, msg.createdAt),
-      inArray(schema.agentRuns.status, ['running', 'compacting', 'paused']),
-    ),
-  })
-  if (runsToAbort.length > 0) {
-    const { AgentRunner } = await getAgentRunner()
-    for (const r of runsToAbort) AgentRunner.abort(r.id)
-    // 让 finalize 跑完，把 emitErrorVisualisation 的 msg_err_* 也落进时间窗
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-
-  // 撤回会让 SDK session 中保存的「user msg → agent reply」对儿和 DB 不一致；清掉重来
-  clearClaudeCodeSession(conversationId)
-  clearCodexSession(conversationId)
-
-  // 重新扫一遍待删的 ids（含 wait 期间补写入的死消息）
-  const messagesToDelete = await db.query.messages.findMany({
-    where: and(
-      eq(schema.messages.conversationId, conversationId),
-      gte(schema.messages.createdAt, msg.createdAt),
-    ),
-  })
-  const messageIds = messagesToDelete.map((m) => m.id)
-  await db.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId))
-
-  // 从 parts 提取 artifact_ref 拿到要删的 artifact id
-  const artifactIds = new Set<string>()
-  for (const m of messagesToDelete) {
-    for (const p of m.parts) {
-      if (p.type === 'artifact_ref') artifactIds.add(p.artifactId)
-    }
-  }
-
-  const runsToDelete = await db.query.agentRuns.findMany({
-    where: and(
-      eq(schema.agentRuns.conversationId, conversationId),
-      gte(schema.agentRuns.startedAt, msg.createdAt),
-    ),
-  })
-  const runIds = runsToDelete.map((r) => r.id)
-
-  db.transaction((tx) => {
-    if (messageIds.length > 0) {
-      tx.delete(schema.messages).where(inArray(schema.messages.id, messageIds)).run()
-    }
-    if (artifactIds.size > 0) {
-      tx.delete(schema.artifacts)
-        .where(inArray(schema.artifacts.id, [...artifactIds]))
-        .run()
-    }
-    if (runIds.length > 0) {
-      tx.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds)).run()
-    }
-  })
-
-  // 广播删除：让其它已连接客户端（尤其桌面端）实时移除被撤回/编辑掉的消息及其产物。
-  // 同时覆盖编辑路径——editAndResendLatestUserMessage 内部就是调本函数删除的。
-  eventBus.publish({
-    type: 'message.removed',
-    conversationId,
-    timestamp: Date.now(),
-    messageIds,
-    artifactIds: [...artifactIds],
-  })
-
-  return { deletedMessageIds: messageIds, deletedArtifactIds: [...artifactIds] }
+  return removeTurnOutput(conversationId, messageId, true)
 }
 
 export interface EditAndResendResult extends WithdrawResult {
@@ -867,12 +840,7 @@ export interface EditAndResendResult extends WithdrawResult {
 }
 
 // ─── 重新生成最后一次 agent 响应 ──────────────────────────
-/**
- * 删除最后一条 user 消息之后的所有 agent message + agent_runs + artifact_ref，
- * 然后以同一条 user 消息为触发，重启 AgentRunner（responders 重新决定）。
- *
- * 用 case：用户对最后一个 agent 回答不满意，点「重新生成」让 agent 再答一次。
- */
+/** Regeneration replaces only output owned by the latest user message. */
 export interface RegenerateResult extends WithdrawResult {
   triggerMessageId: string
   runIds: string[]
@@ -885,7 +853,7 @@ export async function regenerateLatestResponse(
   })
   if (!conv) throw new Error(`Conversation not found: ${conversationId}`)
 
-  // 取最后一条 user message —— 我们要保留它，删它之后的所有
+  // 保留最后一条用户输入，仅清理其所属任务的输出。
   const latestUser = await db.query.messages.findFirst({
     where: and(
       eq(schema.messages.conversationId, conversationId),
@@ -896,72 +864,7 @@ export async function regenerateLatestResponse(
   if (!latestUser) throw new Error('No user message to regenerate from')
   if (latestUser.status === 'queued') throw new Error('消息仍在排队，无需重新生成。')
 
-  // abort 任何还在跑的 run（不一定有）
-  const runsToAbort = await db.query.agentRuns.findMany({
-    where: and(
-      eq(schema.agentRuns.conversationId, conversationId),
-      gt(schema.agentRuns.startedAt, latestUser.createdAt),
-      inArray(schema.agentRuns.status, ['running', 'compacting', 'paused']),
-    ),
-  })
-  if (runsToAbort.length > 0) {
-    const { AgentRunner } = await getAgentRunner()
-    for (const r of runsToAbort) AgentRunner.abort(r.id)
-    await new Promise((resolve) => setTimeout(resolve, 500))
-  }
-
-  // 重新生成等价于「让 agent 对同一个 user msg 重新作答」，SDK session 里那个旧 reply 要扔；清掉重新开 session
-  clearClaudeCodeSession(conversationId)
-  clearCodexSession(conversationId)
-
-  // 删除 latestUser 之后的所有 message（保留 latestUser 本身）
-  const messagesToDelete = await db.query.messages.findMany({
-    where: and(
-      eq(schema.messages.conversationId, conversationId),
-      gt(schema.messages.createdAt, latestUser.createdAt),
-    ),
-  })
-  const messageIds = messagesToDelete.map((m) => m.id)
-
-  const artifactIds = new Set<string>()
-  for (const m of messagesToDelete) {
-    for (const p of m.parts) {
-      if (p.type === 'artifact_ref') artifactIds.add(p.artifactId)
-    }
-  }
-
-  const runsToDelete = await db.query.agentRuns.findMany({
-    where: and(
-      eq(schema.agentRuns.conversationId, conversationId),
-      gt(schema.agentRuns.startedAt, latestUser.createdAt),
-    ),
-  })
-  const runIds = runsToDelete.map((r) => r.id)
-
-  db.transaction((tx) => {
-    // Regeneration may reuse deleted message rowids; re-extract from retained sources.
-    tx.delete(schema.memoryJobs).where(eq(schema.memoryJobs.conversationId, conversationId)).run()
-    if (messageIds.length > 0) {
-      tx.delete(schema.messages).where(inArray(schema.messages.id, messageIds)).run()
-    }
-    if (artifactIds.size > 0) {
-      tx.delete(schema.artifacts)
-        .where(inArray(schema.artifacts.id, [...artifactIds]))
-        .run()
-    }
-    if (runIds.length > 0) {
-      tx.delete(schema.agentRuns).where(inArray(schema.agentRuns.id, runIds)).run()
-    }
-  })
-
-  // 广播删除：在启动新 run 之前发，保证其它客户端「先移除旧回复，再收到新回复」。
-  eventBus.publish({
-    type: 'message.removed',
-    conversationId,
-    timestamp: Date.now(),
-    messageIds,
-    artifactIds: [...artifactIds],
-  })
+  const removed = await removeTurnOutput(conversationId, latestUser.id, false)
 
   // 重新决定 responders（沿用 sendMessage 的 decideResponders）
   const agentsInConv = await db.query.agents.findMany({
@@ -981,8 +884,7 @@ export async function regenerateLatestResponse(
   }
 
   return {
-    deletedMessageIds: messageIds,
-    deletedArtifactIds: [...artifactIds],
+    ...removed,
     triggerMessageId: latestUser.id,
     runIds: newRunIds,
   }

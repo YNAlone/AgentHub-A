@@ -1,15 +1,46 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { db, schema, sqlite } from '@/db/client'
-import { createConversation, sendMessage, withdrawLatestUserMessage } from './conversation-service'
+import { createConversation, sendMessage, withdrawLatestUserMessage, regenerateLatestResponse, editAndResendLatestUserMessage } from './conversation-service'
 import { claimNextMessage, drainMessageQueue } from './message-queue'
 import { recoverInterruptedRuns } from './recovery-service'
 import { buildHistoryFor } from './conversation-context'
 
 const { run } = vi.hoisted(() => ({ run: vi.fn((_args: unknown, runId: string) => ({ runId, promise: new Promise(() => {}) })) }))
-vi.mock('./agent-runner', () => ({ AgentRunner: { run } }))
+vi.mock('./agent-runner', () => ({ AgentRunner: { run, abortAndWait: vi.fn(async () => {}) } }))
 beforeEach(() => { sqlite.prepare('DELETE FROM conversations').run(); run.mockClear() })
 const agent = db.select().from(schema.agents).all()[0]
+
+it.each(['withdraw', 'regenerate', 'edit'] as const)('preserves the previous turn after queued input is dispatched: %s', async (action) => {
+  const c = await createConversation({ mode: 'single', agentIds: [agent.id] })
+  const first = await sendMessage({ conversationId: c.id, content: 'A' })
+  const second = await sendMessage({ conversationId: c.id, content: 'B' })
+  sqlite.prepare('UPDATE messages SET created_at=? WHERE id=?').run(100, first.messageId)
+  sqlite.prepare('UPDATE messages SET created_at=? WHERE id=?').run(200, second.messageId)
+  // The previous answer arrives after B was enqueued; timestamps cannot identify ownership.
+  for (const [id, runId] of [['a-reply', first.runIds[0]]]) {
+    db.insert(schema.artifacts).values({ id, conversationId: c.id, type: 'document', title: id, content: { type: 'document', format: 'markdown', content: id }, createdByAgentId: agent.id, createdAt: Date.now() + 10 }).run()
+    db.insert(schema.messages).values({ id, conversationId: c.id, runId, role: 'agent', status: 'complete', parts: [{ type: 'artifact_ref', artifactId: id }], createdAt: Date.now() + 10 }).run()
+  }
+  sqlite.prepare("UPDATE agent_runs SET status='complete'").run()
+  await drainMessageQueue()
+  const secondRun = db.select().from(schema.agentRuns).where(eq(schema.agentRuns.triggerMessageId, second.messageId)).get()!
+  db.insert(schema.agentRuns).values({ id: 'b-child', conversationId: c.id, agentId: agent.id, parentRunId: secondRun.id, status: 'complete', startedAt: 1 }).run()
+  db.insert(schema.artifacts).values({ id: 'b-artifact', conversationId: c.id, type: 'document', title: 'B', content: { type: 'document', format: 'markdown', content: 'B' }, createdByAgentId: agent.id, createdAt: 1 }).run()
+  db.insert(schema.messages).values({ id: 'b-reply', conversationId: c.id, runId: 'b-child', role: 'agent', status: 'complete', parts: [{ type: 'artifact_ref', artifactId: 'b-artifact' }, { type: 'artifact_ref', artifactId: 'a-reply' }], createdAt: 1 }).run()
+  sqlite.prepare("INSERT INTO run_workflow_journal(run_id,step,value) VALUES ('b-child','args','{}')").run()
+  sqlite.prepare("UPDATE agent_runs SET status='complete'").run()
+  if (action === 'withdraw') await withdrawLatestUserMessage(c.id, second.messageId)
+  if (action === 'regenerate') await regenerateLatestResponse(c.id)
+  if (action === 'edit') await editAndResendLatestUserMessage(c.id, second.messageId, 'edited B')
+  expect(db.select().from(schema.messages).where(eq(schema.messages.id, 'a-reply')).get()).toBeDefined()
+  expect(db.select().from(schema.artifacts).where(eq(schema.artifacts.id, 'a-reply')).get()).toBeDefined()
+  expect(db.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, first.runIds[0])).get()).toBeDefined()
+  expect(db.select().from(schema.messages).where(eq(schema.messages.id, 'b-reply')).get()).toBeUndefined()
+  expect(db.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, 'b-child')).get()).toBeUndefined()
+  expect(db.select().from(schema.artifacts).where(eq(schema.artifacts.id, 'b-artifact')).get()).toBeUndefined()
+  expect(sqlite.prepare("SELECT 1 FROM run_workflow_journal WHERE run_id='b-child'").get()).toBeUndefined()
+})
 
 it('serializes messages including concurrent sends and keeps pending content out of history', async () => {
   const c = await createConversation({ mode: 'single', agentIds: [agent.id] })

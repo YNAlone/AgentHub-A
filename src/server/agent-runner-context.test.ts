@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { db, schema, sqlite } from '@/db/client'
 import { AgentRunner } from './agent-runner'
 import { agentRegistry } from './adapters/registry'
-import { createConversation } from './conversation-service'
+import { createConversation, withdrawLatestUserMessage } from './conversation-service'
 import { ContextPausedError } from './working-context'
 import { readCheckpoint } from './context-checkpoints'
 import { recoverInterruptedRuns } from './recovery-service'
@@ -60,4 +60,35 @@ it('cancels a paused run without invoking an adapter', () => {
   expect(AgentRunner.abort('cancel-paused')).toBe(true)
   expect(db.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, 'cancel-paused')).get()?.status).toBe('aborted')
   expect(AgentRunner.abort('cancel-paused')).toBe(false)
+})
+
+it('withdrawal waits for cancelled provider cleanup and removes its final error message', async () => {
+  const agent = db.select().from(schema.agents).all()[0]
+  const conversation = await createConversation({ mode: 'single', agentIds: [agent.id] })
+  db.insert(schema.messages).values({ id: 'cancel-trigger', conversationId: conversation.id, role: 'user', status: 'complete', parts: [{ type: 'text', content: 'work' }], createdAt: Date.now() }).run()
+  let started = false
+  let aborted = false
+  let release!: () => void
+  const cleanup = new Promise<void>((resolve) => { release = resolve })
+  const stream = async function* (input: AdapterInput, signal: AbortSignal): AsyncIterable<StreamEvent> {
+    started = true
+    await new Promise<void>((resolve) => signal.addEventListener('abort', () => { aborted = true; resolve() }, { once: true }))
+    await cleanup
+    signal.throwIfAborted()
+    yield { type: 'run.end', conversationId: input.conversationId, runId: input.runId, status: 'aborted', timestamp: Date.now() }
+  }
+  const spy = vi.spyOn(agentRegistry, 'getAdapter').mockReturnValue({ name: 'custom', stream })
+  try {
+    const running = AgentRunner.run({ agentId: agent.id, conversationId: conversation.id, triggerMessageId: 'cancel-trigger' })
+    await vi.waitFor(() => expect(started).toBe(true))
+    let removed = false
+    const withdrawal = withdrawLatestUserMessage(conversation.id, 'cancel-trigger').then(() => { removed = true })
+    await vi.waitFor(() => expect(aborted).toBe(true))
+    expect(removed).toBe(false)
+    release()
+    await withdrawal
+    await running.promise
+    expect(db.select().from(schema.messages).where(eq(schema.messages.conversationId, conversation.id)).all()).toEqual([])
+    expect(db.select().from(schema.agentRuns).where(eq(schema.agentRuns.id, running.runId)).get()).toBeUndefined()
+  } finally { release(); spy.mockRestore() }
 })

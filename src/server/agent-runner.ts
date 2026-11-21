@@ -290,6 +290,13 @@ export const AgentRunner = {
     return this.run({ ...args, parentSignal }, runId)
   },
 
+  // Deletion must await finalization instead of guessing how long an aborted provider takes to settle.
+  async abortAndWait(runIds: string[]): Promise<void> {
+    const pending = runIds.flatMap((id) => runPromises.has(id) ? [runPromises.get(id)!] : [])
+    for (const id of runIds) this.abort(id)
+    await Promise.allSettled(pending)
+  },
+
   abort(runId: string): boolean {
     const ac = activeRuns.get(runId)
     if (!ac) {
