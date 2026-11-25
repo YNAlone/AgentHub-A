@@ -1,4 +1,5 @@
 import { sqlite } from '@/db/client'
+import { decryptSecret, encryptSecret } from '@/server/crypto-secrets'
 
 const ID = 'web-tools'
 
@@ -8,7 +9,8 @@ export function getWebToolKey(): string | null {
 }
 function storedKey(): string | null {
   const row = sqlite.prepare('SELECT value FROM personal_settings WHERE id = ?').get(ID) as { value: string } | undefined
-  return row ? (JSON.parse(row.value) as { apiKey: string | null }).apiKey : null
+  if (!row) return null
+  return decryptSecret((JSON.parse(row.value) as { apiKey: string | null }).apiKey)
 }
 export function webToolStatus() {
   const saved = !!storedKey()
@@ -18,7 +20,7 @@ export function saveWebToolKey(key: string | null | undefined) {
   // Empty edits preserve the secret; null removes the saved override but not environment fallback.
   if (key === null || key?.trim()) {
     sqlite.prepare('INSERT INTO personal_settings(id, value) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value')
-      .run(ID, JSON.stringify({ apiKey: key?.trim() ?? null }))
+      .run(ID, JSON.stringify({ apiKey: encryptSecret(key) }))
   }
   return webToolStatus()
 }

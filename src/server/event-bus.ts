@@ -1,8 +1,19 @@
 import { EventEmitter } from 'node:events'
 import { sqlite } from '@/db/client'
+import { redactSecrets } from './crypto-secrets'
 import { EventJournal } from './event-journal'
 
 import type { StreamEvent } from '@/shared/types'
+
+function sanitizeStreamEvent(event: StreamEvent): StreamEvent {
+  if ('error' in event && typeof event.error === 'string') {
+    const redacted = redactSecrets(event.error)
+    if (redacted !== event.error) {
+      return { ...event, error: redacted }
+    }
+  }
+  return event
+}
 
 /**
  * 进程内事件总线。所有 Adapter 产生的 StreamEvent 经由此分发到 SSE 订阅者。
@@ -21,8 +32,9 @@ class EventBus {
   }
 
   publish(event: StreamEvent): void {
-    const id = this.journal.append(event)
-    this.emitter.emit('event', event, id)
+    const safeEvent = sanitizeStreamEvent(event)
+    const id = this.journal.append(safeEvent)
+    this.emitter.emit('event', safeEvent, id)
   }
 
   subscribe(listener: (event: StreamEvent, id: number) => void): () => void {

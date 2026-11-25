@@ -13,6 +13,7 @@ import type {
   MessageRow,
 } from '@/db/schema'
 import { clearClaudeCodeSession, clearCodexSession } from '@/server/adapters/session-store'
+import { decryptSecret } from '@/server/crypto-secrets'
 import { newContextSummaryId, newMessageId } from '@/server/ids'
 import {
   getEffectiveAnthropicBaseUrl,
@@ -373,12 +374,13 @@ async function chooseSummaryModel(agentIds: string[]): Promise<SummaryModelChoic
 }
 
 async function choiceFromCustomAgent(agent: AgentRow): Promise<SummaryModelChoice | null> {
+  const agentKey = decryptSecret(agent.apiKey)
   if (agent.adapterName === 'claude-code') {
-    const key = agent.apiKey ?? await getEffectiveApiKey('anthropic')
+    const key = agentKey ?? await getEffectiveApiKey('anthropic')
     return key ? buildAnthropicChoice(key, agent.apiBaseUrl ?? await getEffectiveAnthropicBaseUrl(), agent.modelId ?? DEFAULT_CLAUDE_MODEL) : null
   }
   if (agent.adapterName === 'codex') {
-    const key = agent.apiKey ?? await getEffectiveApiKey('openai')
+    const key = agentKey ?? await getEffectiveApiKey('openai')
     if (!key) return null
     const model = agent.modelId ?? 'gpt-5-codex'
     const client = new OpenAI({ apiKey: key, baseURL: agent.apiBaseUrl ?? undefined, maxRetries: 0 })
@@ -393,7 +395,7 @@ async function choiceFromCustomAgent(agent: AgentRow): Promise<SummaryModelChoic
   }
   if (agent.adapterName !== 'custom' || !agent.modelProvider || !agent.modelId) return null
   if (agent.modelProvider === 'anthropic') {
-    const key = agent.apiKey ?? (await getEffectiveApiKey('anthropic'))
+    const key = agentKey ?? (await getEffectiveApiKey('anthropic'))
     if (!key) return null
     return buildAnthropicChoice(
       key,
@@ -402,17 +404,17 @@ async function choiceFromCustomAgent(agent: AgentRow): Promise<SummaryModelChoic
     )
   }
   if (agent.modelProvider === 'openai-compatible') {
-    if (!agent.apiKey || !agent.apiBaseUrl) return null
+    if (!agentKey || !agent.apiBaseUrl) return null
     return buildOpenAICompatibleChoice(
       agent.modelProvider,
       agent.modelId,
-      agent.apiKey,
+      agentKey,
       agent.apiBaseUrl,
     )
   }
 
   const key =
-    agent.apiKey ??
+    agentKey ??
     (await getEffectiveApiKey(agent.modelProvider === 'volcano-ark' ? 'ark' : agent.modelProvider))
   if (!key) return null
 

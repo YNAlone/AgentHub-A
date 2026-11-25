@@ -16,6 +16,7 @@ import {
   writeCompanionConfig,
   type CompanionMode,
 } from '@/server/companion-config'
+import { decryptSecret, encryptSecret } from '@/server/crypto-secrets'
 
 const SINGLETON_ID = 'singleton'
 
@@ -38,7 +39,15 @@ export async function getAppSettings(): Promise<AppSettingsRow> {
   const row = await db.query.appSettings.findFirst({
     where: eq(schema.appSettings.id, SINGLETON_ID),
   })
-  return row ?? EMPTY
+  if (!row) return EMPTY
+  return {
+    ...row,
+    anthropicApiKey: decryptSecret(row.anthropicApiKey),
+    openaiApiKey: decryptSecret(row.openaiApiKey),
+    deepseekApiKey: decryptSecret(row.deepseekApiKey),
+    arkApiKey: decryptSecret(row.arkApiKey),
+    mobileDeviceToken: decryptSecret(row.mobileDeviceToken),
+  }
 }
 
 export interface AppSettingsPatch {
@@ -70,24 +79,33 @@ export async function updateAppSettings(patch: AppSettingsPatch): Promise<AppSet
     next.mobileDeviceToken = newMobileDeviceToken()
   }
 
+  const stored: AppSettingsRow = {
+    ...next,
+    anthropicApiKey: encryptSecret(next.anthropicApiKey),
+    openaiApiKey: encryptSecret(next.openaiApiKey),
+    deepseekApiKey: encryptSecret(next.deepseekApiKey),
+    arkApiKey: encryptSecret(next.arkApiKey),
+    mobileDeviceToken: encryptSecret(next.mobileDeviceToken),
+  }
+
   // upsert：先 delete + insert（SQLite ON CONFLICT 需要 unique constraint；PK 自带）
   await db
     .insert(schema.appSettings)
-    .values(next)
+    .values(stored)
     .onConflictDoUpdate({
       target: schema.appSettings.id,
       set: {
-        anthropicApiKey: next.anthropicApiKey,
-        anthropicBaseUrl: next.anthropicBaseUrl,
-        openaiApiKey: next.openaiApiKey,
-        deepseekApiKey: next.deepseekApiKey,
-        arkApiKey: next.arkApiKey,
-        companionMode: next.companionMode,
-        mobileDeviceToken: next.mobileDeviceToken,
-        deploymentPublishEnabled: next.deploymentPublishEnabled,
-        deploymentPublishDir: next.deploymentPublishDir,
-        deploymentPublicBaseUrl: next.deploymentPublicBaseUrl,
-        updatedAt: next.updatedAt,
+        anthropicApiKey: stored.anthropicApiKey,
+        anthropicBaseUrl: stored.anthropicBaseUrl,
+        openaiApiKey: stored.openaiApiKey,
+        deepseekApiKey: stored.deepseekApiKey,
+        arkApiKey: stored.arkApiKey,
+        companionMode: stored.companionMode,
+        mobileDeviceToken: stored.mobileDeviceToken,
+        deploymentPublishEnabled: stored.deploymentPublishEnabled,
+        deploymentPublishDir: stored.deploymentPublishDir,
+        deploymentPublicBaseUrl: stored.deploymentPublicBaseUrl,
+        updatedAt: stored.updatedAt,
       },
     })
 

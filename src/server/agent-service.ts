@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm'
 
 import { db, schema } from '@/db/client'
+import { decryptSecret, encryptSecret } from '@/server/crypto-secrets'
 import { newAgentId } from '@/server/ids'
 import {
   validateOpenAICompatibleApiKey,
@@ -60,7 +61,7 @@ export async function createCustomAgent(args: CreateAgentArgs) {
     adapterName,
     modelProvider: adapterName === 'custom' ? (args.modelProvider ?? null) : null,
     modelId: args.modelId ?? null,
-    apiKey: args.apiKey?.trim() || null,
+    apiKey: encryptSecret(args.apiKey),
     apiBaseUrl: args.apiBaseUrl?.trim() || null,
     // SDK adapter 走各自内置工具集，不消费 toolNames；强制空数组避免 UI 残留
     toolNames: adapterName === 'custom' ? args.toolNames : [],
@@ -121,7 +122,8 @@ export async function updateCustomAgent(agentId: string, patch: UpdateAgentPatch
   const nextModelId = patch.modelId ?? agent.modelId
   const nextApiBaseUrl =
     patch.apiBaseUrl !== undefined ? patch.apiBaseUrl?.trim() || null : agent.apiBaseUrl
-  const nextApiKey = patch.apiKey !== undefined ? patch.apiKey?.trim() || null : agent.apiKey
+  const nextApiKey =
+    patch.apiKey !== undefined ? patch.apiKey?.trim() || null : decryptSecret(agent.apiKey)
 
   if (nextAdapterName === 'custom' && (!nextModelProvider || !nextModelId)) {
     throw new Error('Custom adapter requires modelProvider and modelId')
@@ -140,7 +142,7 @@ export async function updateCustomAgent(agentId: string, patch: UpdateAgentPatch
   if (patch.adapterName !== undefined) updates.adapterName = patch.adapterName
   if (patch.modelId !== undefined) updates.modelId = patch.modelId?.trim() || null
   if (patch.supportsVision !== undefined) updates.supportsVision = patch.supportsVision
-  if (patch.apiKey !== undefined) updates.apiKey = patch.apiKey?.trim() || null
+  if (patch.apiKey !== undefined) updates.apiKey = encryptSecret(patch.apiKey)
   if (patch.apiBaseUrl !== undefined) updates.apiBaseUrl = patch.apiBaseUrl?.trim() || null
 
   if (nextAdapterName === 'custom') {
