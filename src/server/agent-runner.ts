@@ -15,6 +15,7 @@ import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
 import { db, schema, sqlite } from '@/db/client'
+import { decryptSecret } from './crypto-secrets'
 import type { AgentRow, ArtifactRow, MessageRow, WorkspaceRow } from '@/db/schema'
 import type {
   ArtifactContent,
@@ -2072,7 +2073,7 @@ async function buildAdapterInput(
 
   // Key 优先级：agent.apiKey (per-agent) > app_settings.* (用户全局自填) > adapter 内部 fallback env var
   // 只在 per-agent 字段为空时才注入全局 settings，避免覆盖用户的精细配置
-  let effectiveApiKey = agent.apiKey
+  let effectiveApiKey = decryptSecret(agent.apiKey)
   let effectiveApiBaseUrl = agent.apiBaseUrl
   if (!effectiveApiKey || (!effectiveApiBaseUrl && agent.adapterName === 'claude-code')) {
     const settings = await getAppSettings()

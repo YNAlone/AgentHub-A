@@ -185,7 +185,7 @@ Codex adapter 额外约束：运行时 `CODEX_HOME` / `CODEX_SQLITE_HOME` 指向
 
 - 浏览器只获得凭据配置标记；运行时服务保留原值，响应使用字段白名单。空编辑保留，显式 null 清空。
 - **绝不**在代码中硬编码 key
-- **不引入** keychain / safeStorage / 第三方加密存储 —— 本地单用户场景，DB 文件系统权限已经够；引入 keychain 增加跨平台复杂度（详见 spec 11 与 README）
+- **落库加密（`feat/team-mvp` 安全基线）**：服务端写入数据库的 API Key / Token 必须通过 `src/server/crypto-secrets.ts`（`AES-256-GCM`，前缀 `enc:v1:`）加密存储；主密钥由 `AGENTHUB_MASTER_KEY` 注入（本地开发缺省自动生成 `.agenthub-data/master.key`，权限 `0600`）；读取时兼容旧明文数据并在事件流错误中自动脱敏
 - 桌面版（Electron，详见 Spec 12）也用这套机制；只是 DB 文件位置改为 `app.getPath('userData')`
 - 缺失 key 时，由 adapter 在 `buildClient()` / SDK 内抛错（不要在启动时拒绝服务，因为用户可能只用其中某些 provider）
 

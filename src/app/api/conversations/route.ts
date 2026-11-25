@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { createConversation, listConversations } from '@/server/conversation-service'
+import { isTeamMode, requireTeamAccess } from '@/server/rbac'
 
 const CreateBody = z.object({
   projectId: z.string().min(1).optional(),
@@ -11,12 +12,17 @@ const CreateBody = z.object({
   boundPath: z.string().optional(),
 })
 
-export async function GET() {
-  const conversations = await listConversations()
+export async function GET(req: NextRequest) {
+  const guard = await requireTeamAccess(req, 'viewer')
+  if (!guard.ok) return guard.response
+  const conversations = await listConversations(isTeamMode() ? guard.teamId : undefined)
   return NextResponse.json({ conversations })
 }
 
 export async function POST(req: NextRequest) {
+  const guard = await requireTeamAccess(req, 'member')
+  if (!guard.ok) return guard.response
+
   const raw = await req.json().catch(() => null)
   const parsed = CreateBody.safeParse(raw)
   if (!parsed.success) {
@@ -24,7 +30,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const conversation = await createConversation(parsed.data)
+    const conversation = await createConversation({
+      ...parsed.data,
+      teamId: guard.teamId,
+      createdByUserId: guard.session?.user.id ?? null,
+    })
     return NextResponse.json({ conversation }, { status: 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

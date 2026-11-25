@@ -468,6 +468,8 @@ export interface MessageRecord {
   conversationId: string
   role: 'user' | 'agent' | 'system'
   agentId: string | null
+  senderUserId?: string | null
+  senderName?: string | null
   parts: MessagePart[]
   status: 'queued' | 'streaming' | 'complete' | 'error' | 'aborted'
   parentMessageId: string | null
