@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 
 import { clearConversationHistory, listMessages, sendMessage } from '@/server/conversation-service'
+import { assertConversationTeamAccess } from '@/server/rbac'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -20,14 +21,18 @@ const SendBody = z
     { message: '必须提供 content 或 attachmentIds 之一' },
   )
 
-export async function GET(_req: NextRequest, ctx: RouteContext) {
+export async function GET(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params
+  const guard = await assertConversationTeamAccess(req, id, 'viewer')
+  if (!guard.ok) return guard.response
   const messages = await listMessages(id)
   return NextResponse.json({ messages })
 }
 
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params
+  const guard = await assertConversationTeamAccess(req, id, 'member')
+  if (!guard.ok) return guard.response
   const raw = await req.json().catch(() => null)
   const parsed = SendBody.safeParse(raw)
   if (!parsed.success) {
@@ -42,6 +47,8 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       mentionedAgentIds: parsed.data.mentionedAgentIds,
       parentMessageId: parsed.data.parentMessageId,
       attachmentIds: parsed.data.attachmentIds,
+      senderUserId: guard.session?.user.id ?? null,
+      senderName: guard.session?.user.displayName ?? null,
     })
     return NextResponse.json(result, { status: 202 })
   } catch (err) {
@@ -50,8 +57,10 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
   }
 }
 
-export async function DELETE(_req: NextRequest, ctx: RouteContext) {
+export async function DELETE(req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params
+  const guard = await assertConversationTeamAccess(req, id, 'owner')
+  if (!guard.ok) return guard.response
   try {
     const result = await clearConversationHistory(id)
     return NextResponse.json(result)

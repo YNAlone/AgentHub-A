@@ -64,6 +64,8 @@ const DDL: string[] = [
     archived INTEGER NOT NULL DEFAULT 0,
     pinned_at INTEGER,
     fs_write_approval_mode TEXT NOT NULL DEFAULT 'review',
+    team_id TEXT,
+    created_by_user_id TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
@@ -75,6 +77,8 @@ const DDL: string[] = [
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     agent_id TEXT REFERENCES agents(id),
+    sender_user_id TEXT,
+    sender_name TEXT,
     parts TEXT NOT NULL,
     status TEXT NOT NULL,
     parent_message_id TEXT,
@@ -187,6 +191,50 @@ const DDL: string[] = [
     deployment_public_base_url TEXT,
     updated_at INTEGER NOT NULL
   )`,
+
+  // ─── users / teams / RBAC / sessions ──────────
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    avatar TEXT NOT NULL DEFAULT '👤',
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS teams (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    created_by_user_id TEXT NOT NULL REFERENCES users(id),
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS team_members (
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    joined_at INTEGER NOT NULL,
+    PRIMARY KEY (team_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)`,
+  `CREATE TABLE IF NOT EXISTS user_sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    active_team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)`,
+  `CREATE TABLE IF NOT EXISTS team_invites (
+    code TEXT PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member',
+    created_by_user_id TEXT NOT NULL REFERENCES users(id),
+    expires_at INTEGER NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 10,
+    use_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_team_invites_team ON team_invites(team_id)`,
 ]
 
 /** 建表 / 建索引（幂等）。 */
@@ -199,6 +247,11 @@ function ensureSchema(sqlite: Database.Database): void {
   safeAlter(sqlite, `ALTER TABLE app_settings ADD COLUMN deployment_publish_enabled INTEGER NOT NULL DEFAULT 0`)
   safeAlter(sqlite, `ALTER TABLE app_settings ADD COLUMN deployment_publish_dir TEXT`)
   safeAlter(sqlite, `ALTER TABLE app_settings ADD COLUMN deployment_public_base_url TEXT`)
+  safeAlter(sqlite, `ALTER TABLE conversations ADD COLUMN team_id TEXT`)
+  safeAlter(sqlite, `ALTER TABLE conversations ADD COLUMN created_by_user_id TEXT`)
+  safeAlter(sqlite, `ALTER TABLE messages ADD COLUMN sender_user_id TEXT`)
+  safeAlter(sqlite, `ALTER TABLE messages ADD COLUMN sender_name TEXT`)
+  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_conv_team ON conversations(team_id)`)
 }
 
 function safeAlter(sqlite: Database.Database, stmt: string): void {

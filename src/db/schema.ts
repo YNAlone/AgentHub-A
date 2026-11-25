@@ -75,11 +75,14 @@ export const conversations = sqliteTable(
     fsWriteApprovalMode: text('fs_write_approval_mode', { enum: ['auto', 'review'] })
       .notNull()
       .default('review'),
+    /** 团队模式下的归属团队与创建人；单机 local 模式下为 null */
+    teamId: text('team_id'),
+    createdByUserId: text('created_by_user_id'),
 
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
-  (t) => [index('idx_conv_updated').on(t.updatedAt)],
+  (t) => [index('idx_conv_updated').on(t.updatedAt), index('idx_conv_team').on(t.teamId)],
 )
 
 // ─── Messages ────────────────────────────────────────────────
@@ -93,6 +96,9 @@ export const messages = sqliteTable(
 
     role: text('role', { enum: ['user', 'agent', 'system'] }).notNull(),
     agentId: text('agent_id').references(() => agents.id),
+    /** 团队模式下人类发送者的 ID 与展示名快照；单机 local 模式下为 null */
+    senderUserId: text('sender_user_id'),
+    senderName: text('sender_name'),
 
     parts: text('parts', { mode: 'json' }).$type<MessagePart[]>().notNull(),
 
@@ -355,3 +361,81 @@ export const streamEvents = sqliteTable('stream_events', { id: integer('id').pri
 export const dispatchEvents = sqliteTable('dispatch_events', {
   id: integer('id').primaryKey(), conversationId: text('conversation_id').notNull().references(() => conversations.id, { onDelete: 'cascade' }), event: text('event').notNull(),
 })
+
+// ─── Team & Multi-User Auth (M+N Team MVP) ──────────────────
+export type TeamRole = 'owner' | 'member' | 'viewer'
+
+export const users = sqliteTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  avatar: text('avatar').notNull().default('👤'),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
+export const teams = sqliteTable('teams', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  createdByUserId: text('created_by_user_id')
+    .notNull()
+    .references(() => users.id),
+  createdAt: integer('created_at').notNull(),
+})
+
+export const teamMembers = sqliteTable(
+  'team_members',
+  {
+    teamId: text('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['owner', 'member', 'viewer'] }).notNull(),
+    joinedAt: integer('joined_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.userId] }),
+    index('idx_team_members_user').on(t.userId),
+  ],
+)
+
+export const userSessions = sqliteTable(
+  'user_sessions',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    activeTeamId: text('active_team_id').references(() => teams.id, { onDelete: 'set null' }),
+    expiresAt: integer('expires_at').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_user_sessions_user').on(t.userId)],
+)
+
+export const teamInvites = sqliteTable(
+  'team_invites',
+  {
+    code: text('code').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: ['member', 'viewer'] }).notNull().default('member'),
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    expiresAt: integer('expires_at').notNull(),
+    maxUses: integer('max_uses').notNull().default(10),
+    useCount: integer('use_count').notNull().default(0),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('idx_team_invites_team').on(t.teamId)],
+)
+
+export type UserRow = typeof users.$inferSelect
+export type TeamRow = typeof teams.$inferSelect
+export type TeamMemberRow = typeof teamMembers.$inferSelect
+export type TeamInviteRow = typeof teamInvites.$inferSelect

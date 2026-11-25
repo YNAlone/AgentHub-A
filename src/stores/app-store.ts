@@ -514,6 +514,8 @@ export const useAppStore = create<AppState>()(
           conversationId,
           role: 'user',
           agentId: null,
+          senderUserId: null,
+          senderName: null,
           parts,
           status: 'complete',
           parentMessageId: parentMessageId ?? null,
@@ -640,6 +642,8 @@ export const useAppStore = create<AppState>()(
               conversationId: event.conversationId,
               role: 'agent',
               agentId: event.agentId,
+              senderUserId: null,
+              senderName: null,
               parts: [],
               status: 'streaming',
               parentMessageId: null,
@@ -673,7 +677,11 @@ export const useAppStore = create<AppState>()(
           case 'message.added': {
             // 其它客户端创建的用户消息（如手机端发、桌面端在看）。按 id 幂等 upsert：
             // 发送方自己已对账过同 id，这里无副作用；第二个客户端靠这条插入。
-            s.messages[event.message.id] = event.message
+            s.messages[event.message.id] = {
+              ...event.message,
+              senderUserId: event.message.senderUserId ?? null,
+              senderName: event.message.senderName ?? null,
+            }
             s.messageIdsByConv[event.message.conversationId] ??= []
             if (!s.messageIdsByConv[event.message.conversationId].includes(event.message.id)) {
               s.messageIdsByConv[event.message.conversationId].push(event.message.id)

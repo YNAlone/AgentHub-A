@@ -179,7 +179,8 @@ function serializeMessage(
   if (msg.role === 'user') {
     const content = renderUserParts(msg.parts)
     if (!content) return null
-    return [{ role: 'user', content }]
+    const prefixed = msg.senderName ? `[${msg.senderName}]: ${content}` : content
+    return [{ role: 'user', content: prefixed }]
   }
 
   // role === 'agent'

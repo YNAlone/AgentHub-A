@@ -63,6 +63,8 @@ export interface CreateConversationArgs {
   agentIds: string[]
   /** 用户指定的本地绝对路径；不填走沙箱（默认） */
   boundPath?: string
+  teamId?: string | null
+  createdByUserId?: string | null
 }
 
 export async function createConversation(args: CreateConversationArgs): Promise<ConversationWithMeta> {
@@ -141,6 +143,8 @@ export async function createConversation(args: CreateConversationArgs): Promise<
         pinnedMessageIds: [],
         bookmarkedMessageIds: [],
         archived: false,
+        teamId: args.teamId ?? null,
+        createdByUserId: args.createdByUserId ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -168,6 +172,8 @@ export async function createConversation(args: CreateConversationArgs): Promise<
     archived: false,
     pinnedAt: null,
     fsWriteApprovalMode: 'review',
+    teamId: args.teamId ?? null,
+    createdByUserId: args.createdByUserId ?? null,
     createdAt: now,
     updatedAt: now,
     workspaceMode,
@@ -195,9 +201,10 @@ async function withWorkspaceMeta(
 }
 
 // ─── 列出会话 ────────────────────────────────────────────
-export async function listConversations(): Promise<ConversationWithMeta[]> {
+export async function listConversations(teamId?: string | null): Promise<ConversationWithMeta[]> {
   // pinnedAt desc nulls last + updatedAt desc：置顶在前，相互按 pinnedAt 倒序；未置顶按活跃时间
   const convs = await db.query.conversations.findMany({
+    where: teamId ? eq(schema.conversations.teamId, teamId) : undefined,
     orderBy: [
       desc(schema.conversations.pinnedAt),
       desc(schema.conversations.updatedAt),
@@ -540,6 +547,8 @@ export interface SendMessageArgs {
   mentionedAgentIds?: string[]
   parentMessageId?: string
   attachmentIds?: string[]
+  senderUserId?: string | null
+  senderName?: string | null
 }
 
 export interface SendMessageResult {
@@ -608,6 +617,8 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
       id: messageId,
       conversationId: args.conversationId,
       role: 'user',
+      senderUserId: args.senderUserId ?? null,
+      senderName: args.senderName ?? null,
       parts,
       status: deployIntent ? 'complete' : 'queued',
       mentionedAgentIds: args.mentionedAgentIds ?? [],
@@ -639,6 +650,8 @@ export async function sendMessage(args: SendMessageArgs): Promise<SendMessageRes
       conversationId: args.conversationId,
       role: 'user',
       agentId: null,
+      senderUserId: args.senderUserId ?? null,
+      senderName: args.senderName ?? null,
       parts,
       status: deployIntent ? 'complete' : 'queued',
       parentMessageId: args.parentMessageId ?? null,
@@ -704,6 +717,8 @@ export async function reviseDispatchPlan(args: {
       conversationId: args.conversationId,
       role: 'user',
       agentId: null,
+      senderUserId: null,
+      senderName: null,
       parts,
       status: 'complete',
       parentMessageId: null,

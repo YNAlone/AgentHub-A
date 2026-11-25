@@ -17,3 +17,6 @@ export const newPendingQuestionId = () => `pq_${nano()}`
 export const newPendingDispatchPlanId = () => `pdp_${nano()}`
 export const newContextSummaryId = () => `ctx_${nano()}`
 export const newDeploymentId = () => `dep_${nano()}`
+export const newUserId = () => `usr_${nano()}`
+export const newTeamId = () => `team_${nano()}`
+export const newInviteCode = () => `inv_${nano()}${nano().slice(0, 4)}`

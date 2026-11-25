@@ -57,7 +57,11 @@ function MessageItemImpl({ message }: { message: MessageRow }) {
   const upsertMessage = useAppStore((s) => s.upsertMessage)
 
   const isUser = message.role === 'user'
-  const name = isUser ? '我' : message.role === 'system' ? '系统' : agent?.name ?? 'Unknown'
+  const name = isUser
+    ? message.senderName || '我'
+    : message.role === 'system'
+      ? '系统'
+      : agent?.name ?? 'Unknown'
   const isLatestUser = isUser && latestUserId === message.id
   const isLatestAgent = !isUser && latestAgentId === message.id
 

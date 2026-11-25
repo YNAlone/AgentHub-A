@@ -46,6 +46,8 @@ function agentMessage(id: string, runId: string, createdAt: number): MessageRow 
     conversationId: 'conv_1',
     role: 'agent',
     agentId: 'ag_orchestrator',
+    senderUserId: null,
+    senderName: null,
     parts: [],
     status: 'complete',
     parentMessageId: null,
